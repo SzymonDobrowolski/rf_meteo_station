@@ -1,0 +1,5 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "wyświetlacz LCD")(type "KiCad")(uri "${KIPRJMOD}/wyświetlacz LCD.kicad_sym")(options "")(descr ""))
+  (lib (name "przetwornik_napiecia")(type "KiCad")(uri "${KIPRJMOD}/przetwornik_napiecia.kicad_sym")(options "")(descr ""))
+)
