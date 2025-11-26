@@ -1,4 +1,4 @@
-157881458
+26715381829541655
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -106343,3 +106343,10 @@ Varistor VF
 0
 2
 2
+my_footprints
+Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering
+LGA-8
+lga land grid array
+0
+8
+8
