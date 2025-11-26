@@ -5995,16 +5995,6 @@
 	)
 	(wire
 		(pts
-			(xy 118.11 53.34) (xy 118.11 54.61)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0b8c345a-352a-4d72-83bd-fa9e56e4a23c")
-	)
-	(wire
-		(pts
 			(xy 259.08 147.32) (xy 259.08 149.86)
 		)
 		(stroke
@@ -6122,6 +6112,16 @@
 			(type default)
 		)
 		(uuid "1e4dac1e-ac09-4f35-9638-a1563b1df1b8")
+	)
+	(wire
+		(pts
+			(xy 85.09 129.54) (xy 96.52 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "20c8629b-7e7a-4c2b-962e-3e42ffab6104")
 	)
 	(wire
 		(pts
@@ -6452,6 +6452,16 @@
 			(type default)
 		)
 		(uuid "41289b6d-7b22-4604-8613-f02b2371bb6b")
+	)
+	(wire
+		(pts
+			(xy 85.09 152.4) (xy 88.9 152.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "41fa399d-55a6-4bbe-b232-b8e4e6c797b1")
 	)
 	(wire
 		(pts
@@ -8573,6 +8583,16 @@
 		)
 		(uuid "384cf156-4a33-4eb3-b869-8930b05c782e")
 	)
+	(label "NRF_CE"
+		(at 118.11 54.61 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "38689080-5048-4f03-abe6-1e50bbf35bf9")
+	)
 	(label "NRF_MISO"
 		(at 87.63 157.48 0)
 		(effects
@@ -8733,16 +8753,6 @@
 		)
 		(uuid "806b50ff-509c-4722-8eda-1352e83a10b9")
 	)
-	(label "V_3.3_OUT"
-		(at 118.11 53.34 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left bottom)
-		)
-		(uuid "811d70dd-4f32-45b2-9e97-3541ba5193d1")
-	)
 	(label "LCD_SD_MOSI"
 		(at 134.62 170.18 0)
 		(effects
@@ -8874,7 +8884,7 @@
 		(uuid "b145b2c7-7201-4133-9f4c-ceeffa0ec91b")
 	)
 	(label "LCD_SD_CS"
-		(at 93.98 147.32 0)
+		(at 96.52 129.54 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -8942,6 +8952,16 @@
 			(justify right bottom)
 		)
 		(uuid "b948ce7b-2ddd-48a5-a03d-a39940c8d79c")
+	)
+	(label "NRF_CE"
+		(at 88.9 152.4 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "be0dafdc-3064-4b33-9bb8-f99a496f8c2f")
 	)
 	(label "LCD_T_CS"
 		(at 93.98 144.78 0)
