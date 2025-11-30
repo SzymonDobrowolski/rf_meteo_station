@@ -8,9 +8,6 @@
 
 void TWI_Init()
 {
-    PORTA.PIN2CTRL = PORT_PULLUPEN_bm;
-    PORTA.PIN3CTRL = PORT_PULLUPEN_bm;
-
     TWI0_MBAUD = (MAIN_CLK/(2*TWI_CLK) - 5); //TWI na 100kHz
 
     TWI0.MCTRLA = TWI_ENABLE_bm; //wlacz tryb master 
