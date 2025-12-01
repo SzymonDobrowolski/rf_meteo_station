@@ -15,5 +15,10 @@
     "--background-index",
     "--query-driver=d:\\ESP_IDF_TOOLS\\tools\\xtensa-esp-elf\\esp-14.2.0_20241119\\xtensa-esp-elf\\bin\\xtensa-esp32-elf-gcc.exe",
     "--compile-commands-dir=${workspaceFolder}\\build"
-  ]
+  ],
+  "files.associations": {
+    "task.h": "c",
+    "spi_init.h": "c",
+    "freertos.h": "c"
+  }
 }
