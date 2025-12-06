@@ -10,8 +10,8 @@
 #define MAIN_CLK 20000000 //20MHz
 
 //makra do LED
-#define LED_HIGH()  (PORTA.OUTSET = PIN7_bm)
-#define LED_LOW()   (PORTA.OUTCLR = PIN7_bm)
+#define LED_HIGH()  (PORTA.OUTSET = PIN6_bm)
+#define LED_LOW()   (PORTA.OUTCLR = PIN6_bm)
 
 int main(void) {
     // 1. KONFIGURACJA ZEGARA
@@ -35,6 +35,7 @@ int main(void) {
     BME280_Init();
     BME280_ReadCalibration(); //pamietac o tym przy inicjacji
 
+    PORTA.DIRSET = PIN6_bm;
     LED_LOW();
 
     // 3. GŁÓWNA PĘTLA
@@ -72,9 +73,10 @@ int main(void) {
         
         LED_HIGH();//do debugowania, czy jest cos wysylane
         NRF_send_packet(&pkt);
+        _delay_ms(5000);
         LED_LOW();//do debugowania, czy jest cos wysylane
         
-        _delay_ms(30000); //Tx co 30 sekund
+        _delay_ms(25000); //Tx co 30 sekund
     }
 
     return 0;
