@@ -55,5 +55,7 @@
   "C_Cpp_Runner.useLeakSanitizer": false,
   "C_Cpp_Runner.showCompilationTime": false,
   "C_Cpp_Runner.useLinkTimeOptimization": false,
-  "C_Cpp_Runner.msvcSecureNoWarnings": false
+  "C_Cpp_Runner.msvcSecureNoWarnings": false,
+  "idf.portWin": "COM5",
+  "cmake.sourceDirectory": "D:/Github/stacja_pogodowa/rf_meteo_station/ESP32_int_station_code/project-name"
 }

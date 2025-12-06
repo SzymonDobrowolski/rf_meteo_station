@@ -11454,7 +11454,7 @@
 				)
 			)
 		)
-		(property "Footprint" "Connector_USB:USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal"
+		(property "Footprint" "wyświetlacz lcd:USB_C_Receptacle_TME"
 			(at 116.84 85.09 0)
 			(effects
 				(font
