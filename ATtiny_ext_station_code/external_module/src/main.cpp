@@ -32,8 +32,8 @@ int main(void) {
 
     NRF_init();
 
-    BME280_Init();
-    BME280_ReadCalibration(); //pamietac o tym przy inicjacji
+    //BME280_Init();
+    //BME280_ReadCalibration(); //pamietac o tym przy inicjacji
 
     PORTA.DIRSET = PIN6_bm;
     LED_LOW();
@@ -46,37 +46,37 @@ int main(void) {
         
         ///odczytywane dane, ale trzeba je potem skompensowac
         
-        uint8_t data[8];
-        BME280_ReadBytes(0xF7, data, 8);
+        //uint8_t data[8];
+       // BME280_ReadBytes(0xF7, data, 8);
 
         // ciśnienie (20 bit)
-        uint32_t raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
+        //uint32_t raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
 
         // temperatura (20 bit)
-        uint32_t raw_temp  = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+        //uint32_t raw_temp  = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
 
         // wilgotność (16 bit)
-        uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
+        //uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
         
 
         //Tutaj jest przyklzd kompensacji
         
-        int32_t temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
-        uint32_t pressure_pa    = BME280_Compensate_P(raw_press); //Pa
-        uint32_t hum_x1024      = BME280_Compensate_H(raw_hum);  //humidity * 1024
+       // int32_t temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
+       // uint32_t pressure_pa    = BME280_Compensate_P(raw_press); //Pa
+       // uint32_t hum_x1024      = BME280_Compensate_H(raw_hum);  //humidity * 1024
 
         //konwersje użytkowe, zapis do strukrury 
         sensor_packet_t pkt;//nie wiem flash prawie cały zawalony, ale wysyłamy za jednym zamachem chociaż to ma 12 bajtów, więc nie wiem
-        pkt.temperature = temp_hundredths / 100.0f;
-        pkt.humidity    = hum_x1024 / 1024.0f;
-        pkt.pressure    = pressure_pa / 100.0f;
+        pkt.temperature = 36.0;//temp_hundredths / 100.0f;
+        pkt.humidity    = 12.4;//hum_x1024 / 1024.0f;
+        pkt.pressure    = 3.76;//pressure_pa / 100.0f;
         
         LED_HIGH();//do debugowania, czy jest cos wysylane
         NRF_send_packet(&pkt);
         _delay_ms(5000);
         LED_LOW();//do debugowania, czy jest cos wysylane
         
-        _delay_ms(25000); //Tx co 30 sekund
+        _delay_ms(5000); //Tx co 30 sekund
     }
 
     return 0;
