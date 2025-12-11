@@ -1,12 +1,12 @@
-#pragma once
+
 #include <stdio.h>
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
 
 #include "NRF24L01.h"
 
-#define NRF_PIN_CE   22
-#define NRF_PIN_CSN   16
+#define NRF_PIN_CE   17
+#define NRF_PIN_CSN   22
 #define NRF_PIN_IRQ    34
 
 #define NRF_CSN_LOW()  gpio_set_level(NRF_PIN_CSN, 0)

@@ -20,5 +20,6 @@
     "task.h": "c",
     "spi_init.h": "c",
     "freertos.h": "c"
-  }
+  },
+  "idf.flashType": "UART"
 }

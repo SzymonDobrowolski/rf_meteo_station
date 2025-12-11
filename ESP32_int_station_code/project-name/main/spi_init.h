@@ -9,9 +9,5 @@
 #pragma once
 extern spi_device_handle_t nrf_handle; //wskaźnik na urządzenie NRF
 extern spi_device_handle_t lcd_handle;
-extern uint8_t nrf_tx_buffer[33];
-extern uint8_t nrf_rx_buffer[33];
 void spi_init();
 esp_err_t spi_read_write(spi_device_handle_t slave, spi_transaction_t *trans);
-void nrf_read_payload(void);
-void nrf_write_payload(uint8_t *data, size_t length);

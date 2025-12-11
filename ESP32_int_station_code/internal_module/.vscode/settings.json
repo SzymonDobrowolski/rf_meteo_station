@@ -1,11 +1,11 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:\\Users\\Rafal\\esp\\v5.1.6\\esp-idf",
-  "idf.pythonInstallPath": "C:\\Users\\Rafal\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "d:\\ESP_IDF\\v5.5.1\\esp-idf",
+  "idf.pythonInstallPath": "d:\\ESP_IDF_TOOLS\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.toolsPathWin": "C:\\Users\\Rafal\\.espressif",
+  "idf.toolsPathWin": "d:\\ESP_IDF_TOOLS",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
@@ -15,6 +15,6 @@
     "--query-driver=C:\\Users\\Rafal\\.espressif\\tools\\xtensa-esp32-elf\\esp-12.2.0_20230208\\xtensa-esp32-elf\\bin\\xtensa-esp32-elf-gcc.exe",
     "--compile-commands-dir=${workspaceFolder}\\build"
   ],
-  "idf.portWin": "COM3",
+  "idf.portWin": "COM5",
   "idf.flashType": "UART"
 }

@@ -1,3 +1,4 @@
+#pragma once
 #include <stdio.h>
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
