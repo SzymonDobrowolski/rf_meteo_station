@@ -30,14 +30,14 @@ void NRF_write_reg(uint8_t reg, uint8_t value)
 void NRF_set_tx_mode(void)
 {
     // 1. Konfiguracja: PWR_UP=1, PRIM_RX=0 (Nadajnik)
-    NRF_write_reg(0x00, (1 << 1)); 
+    NRF_write_reg(0x00, 0x0A); 
 
     // 2. Ustawienia radiowe (Muszą być identyczne jak w ESP32)
     NRF_write_reg(0x05, 76);     // Kanał 76 (2476 MHz)
     NRF_write_reg(0x06, 0x07);   // 2 Mbps, 0 dBm
 
     // 3. Włączenie Auto-ACK (Ważne dla stabilności)
-    NRF_write_reg(0x01, 0x00);   // EN_AA na Pipe 0
+    NRF_write_reg(0x01, 0x01);   // EN_AA na Pipe 0
     NRF_write_reg(0x02, 0x01);   // EN_RXADDR na Pipe 0
     NRF_write_reg(0x04, 0x2F);   // Retransmisja: co 750us, 15 razy
 

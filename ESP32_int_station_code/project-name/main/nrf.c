@@ -111,13 +111,13 @@ void nrf_init(spi_device_handle_t *spi)
     // Konfiguracja NRF
     nrf_write_register(*spi, REG_RF_CH, 76);      
     nrf_write_register(*spi, REG_RX_PW_P0, 12); // Payload 12 bajtów
-    nrf_write_register(*spi, REG_RF_SETUP, 0x0F);  
+    nrf_write_register(*spi, REG_RF_SETUP, 0x07);  
     nrf_write_register(*spi, REG_EN_AA, 0x01);     
     nrf_write_register(*spi, REG_EN_RXADDR, 0x01); 
     nrf_write_buf(*spi, REG_RX_ADDR_P0, RX_ADDRESS, 5); 
 
     // PWR_UP + PRIM_RX
-    nrf_write_register(*spi, REG_CONFIG, 0x0F); 
+    nrf_write_register(*spi, REG_CONFIG, 0x0B); 
     
     vTaskDelay(pdMS_TO_TICKS(10));
     
