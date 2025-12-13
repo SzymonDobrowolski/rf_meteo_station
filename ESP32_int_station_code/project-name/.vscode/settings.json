@@ -1,12 +1,12 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPathWin": "C:\\Users\\Rafal\\esp\\v5.1.6\\esp-idf",
-  "idf.pythonInstallPath": "C:\\Users\\Rafal\\.espressif\\tools\\idf-python\\3.11.2\\python.exe",
+  "idf.espIdfPathWin": "d:\\ESP_IDF\\v5.5.1\\esp-idf",
+  "idf.pythonInstallPath": "d:\\ESP_IDF_TOOLS\\tools\\idf-python\\3.11.2\\python.exe",
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
   "idf.portWin": "COM5",
-  "idf.toolsPathWin": "C:\\Users\\Rafal\\.espressif",
+  "idf.toolsPathWin": "d:\\ESP_IDF_TOOLS",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },

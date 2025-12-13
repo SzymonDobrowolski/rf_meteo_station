@@ -45,8 +45,8 @@ int main(void) {
     
     NRF_set_tx_mode(); //ustawienie nrf jako nadajnik
     
-    BME280_Init();
-    BME280_ReadCalibration();
+    //BME280_Init();
+    //BME280_ReadCalibration();
     sensor_packet_t pkt;
 
     while (1) {
@@ -63,7 +63,7 @@ int main(void) {
         uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
         
 
-        //Tutaj jest przyklzd kompensacji
+        //Tutaj jest przyklzd kompensacji, potem wstawimy prawdziwe funkcje
         
         pkt.temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
         pkt.pressure_pa    = BME280_Compensate_P(raw_press); //Pa
@@ -73,6 +73,6 @@ int main(void) {
 
         NRF_send_packet(&pkt); //wyślij dane
         blink_led(3, 100); //sygnalizacja wysłania danych
-        _delay_ms(10000); //odczekaj sekundę przed kolejnym pomiarem
+        _delay_ms(1000); //odczekaj sekundę przed kolejnym pomiarem
     }
 }
