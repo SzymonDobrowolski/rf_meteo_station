@@ -45,12 +45,30 @@ int main(void) {
     
     NRF_set_tx_mode(); //ustawienie nrf jako nadajnik
     
+    BME280_Init();
+    BME280_ReadCalibration();
+    sensor_packet_t pkt;
 
     while (1) {
-        sensor_packet_t pkt;
-        pkt.temperature = 25.50;
-        pkt.humidity    = 40.00;
-        pkt.pressure    = 1000.00;
+        uint8_t data[8];
+        BME280_ReadBytes(0xF7, data, 8);
+
+        // ciśnienie (20 bit)
+        uint32_t raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
+
+        // temperatura (20 bit)
+        uint32_t raw_temp  = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+
+        // wilgotność (16 bit)
+        uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
+        
+
+        //Tutaj jest przyklzd kompensacji
+        
+        pkt.temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
+        pkt.pressure_pa    = BME280_Compensate_P(raw_press); //Pa
+        pkt.hum_x1024      = BME280_Compensate_H(raw_hum);
+        
         NRF_write_reg(0x07, 0x70); 
 
         NRF_send_packet(&pkt); //wyślij dane

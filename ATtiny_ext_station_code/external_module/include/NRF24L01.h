@@ -2,9 +2,9 @@
 #include <util/delay.h>
 
 typedef struct __attribute__((packed)) {//to jest struktura 12 bajtowa, nrf może przyjąc 32, dzieki struktorze packet wyslemy cale 12 bajtow za jednym zamachem
-    float temperature;
-    float humidity;
-    float pressure;
+    int32_t temp_hundredths;
+    uint32_t pressure_pa;
+    uint32_t hum_x1024;
 } sensor_packet_t;
 
 uint8_t NRF_read_reg(uint8_t reg);

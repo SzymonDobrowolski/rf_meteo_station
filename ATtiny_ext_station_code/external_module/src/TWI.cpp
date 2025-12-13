@@ -2,13 +2,11 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define MAIN_CLK 20000000 //20MHz
-
 #define TWI_CLK 100000 //100KHz
 
 void TWI_Init()
 {
-    TWI0_MBAUD = (MAIN_CLK/(2*TWI_CLK) - 5); //TWI na 100kHz
+    TWI0_MBAUD = (F_CPU/(2*TWI_CLK) - 5); //TWI na 100kHz
 
     TWI0.MCTRLA = TWI_ENABLE_bm; //wlacz tryb master 
     TWI0.MSTATUS = TWI_BUSSTATE_IDLE_gc; //tryb idle
