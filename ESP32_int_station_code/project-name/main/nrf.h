@@ -19,9 +19,9 @@
 
 // --- STRUKTURA DANYCH (12 bajtów) ---
 typedef struct __attribute__((packed)) {
-    float temp;
-    float hum;
-    float press;
+    int32_t temp_hundredths;
+    uint32_t pressure_pa;
+    uint32_t hum_x1024;
 } SensorData;
 
 void nrf_init();

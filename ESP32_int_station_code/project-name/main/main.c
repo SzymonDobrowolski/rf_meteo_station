@@ -17,9 +17,16 @@ void nrf_receiver_task(void *pvParameters) {
     while(1)
     {
         nrf_receive_data(nrf_handle, &data); //odbieranie danych
-        printf("[ODEBRANO] T: %.2f | H: %.2f | P: %.2f\n", //odczyt w terminalu
-                data.temp, data.hum, data.press);
-            
+        //printf("[ODEBRANO przed konerwsja] T: %d | H: %d | P: %d\n", //odczyt w terminalu
+               // data.temp_hundredths, data.hum_x1024, data.pressure_pa);
+
+        float temp_converted = data.temp_hundredths / 100.0f;
+        float hum_converted = data.hum_x1024 / 1024.0f;
+        float press_converted = data.pressure_pa / 100.0f;
+
+        printf("[ODEBRANO po konwersji] T: %.2f | H: %.2f | P: %.2f\n", //odczyt w terminalu
+                temp_converted, hum_converted, press_converted);
+
         
         vTaskDelay(pdMS_TO_TICKS(10)); //opóźnienie odbioru
     }
