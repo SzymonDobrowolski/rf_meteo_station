@@ -1,78 +1,60 @@
+/*
+ * KOMPLETNY PLIK DIAGNOSTYCZNY DLA ATTINY414 + NRF24L01
+ * Funkcje: Nadawanie + Wykrywanie Resetu Radia (Brown-out detection)
+ */
+
+#define F_CPU 20000000UL // 20 MHz
+
 #include <avr/io.h>
 #include <util/delay.h>
+#include <stdio.h>
+#include <string.h>
 
-#include "TWI.h"
 #include "SPI.h"
 #include "NRF24L01.h"
+#include "TWI.h"
+#include "BME280.h"
+
+#define LED_PIN PIN6_bm
+#define SCL_PIN PIN3_bm
+#define SDA_PIN PIN2_bm
 
 // Makra LED
-#define LED_HIGH()  (PORTA.OUTSET = PIN6_bm)
-#define LED_LOW()   (PORTA.OUTCLR = PIN6_bm)
+#define LED_ON()   (PORTA.OUTSET = LED_PIN)
+#define LED_OFF()  (PORTA.OUTCLR = LED_PIN)
+
+// Funkcja pomocnicza do mrugania (ilość razy, czas ms)
+void blink_led(uint8_t count, uint16_t ms) {
+    for (uint8_t i = 0; i < count; i++) {
+        LED_ON();
+        for(uint16_t d=0; d<ms; d++) _delay_ms(1);
+        LED_OFF();
+        for(uint16_t d=0; d<ms; d++) _delay_ms(1);
+    }
+}
 
 int main(void) {
-    _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0); // 20 MHz
+    _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0); 
 
-    TWI_Init();
+    PORTA.DIRSET = LED_PIN | PIN4_bm | PIN5_bm; // LED, CSN, CE jako wyjścia
+    LED_OFF();
+
     SPI_init();
-    
-    // Inicjalizacja Pinów
-    PORTA.DIRSET = PIN6_bm; 
-    
-    // Inicjalizacja Radia
+    TWI_Init();
     NRF_init();
-    NRF_set_tx_mode();
-
-    // ==========================================
-    // TEST SPRZĘTOWY (CZY ATtiny WIDZI RADIO?)
-    // ==========================================
     
-    uint8_t check_ch = NRF_read_reg(0x05); // Odczytaj kanał (powinno być 76)
-
-    if (check_ch == 76) {
-        // SUKCES: Radio podłączone poprawnie
-        // 3 wolne mrugnięcia na powitanie
-        for(int i=0; i<3; i++) {
-            LED_HIGH(); _delay_ms(500);
-            LED_LOW();  _delay_ms(500);
-        }
-    } else {
-        // BŁĄD KRYTYCZNY: Brak komunikacji z NRF!
-        // check_ch to pewnie 0xFF (255) lub 0x00.
-        // Mrugaj bardzo szybko w nieskończoność - STÓJ TUTAJ
-        while(1) {
-            LED_HIGH(); _delay_ms(50);
-            LED_LOW();  _delay_ms(50);
-        }
-    }
-    // ==========================================
+    NRF_set_tx_mode(); //ustawienie nrf jako nadajnik
+    
 
     while (1) {
         sensor_packet_t pkt;
-        pkt.temperature = 12.34;
-        pkt.humidity    = 56.78;
-        pkt.pressure    = 999.99;
+        pkt.temperature = 25.50;
+        pkt.humidity    = 40.00;
+        pkt.pressure    = 1000.00;
+        NRF_write_reg(0x07, 0x70); 
 
-        // Wyślij
-        NRF_send_packet(&pkt);
-        
-        // Diagnostyka statusu (tak jak wcześniej)
-        _delay_ms(10);
-        uint8_t status = NRF_read_reg(0x07);
-        
-        // Dodatkowe zabezpieczenie: ignoruj status 0xFF (błąd SPI)
-        if (status == 0xFF) {
-             // Jeśli podczas pracy urwie się kabel -> szybkie mruganie
-             for(int i=0; i<10; i++) { LED_HIGH(); _delay_ms(20); LED_LOW(); _delay_ms(20); }
-        }
-        else if (status & (1 << 5)) {
-            // Prawdziwy sukces
-            LED_HIGH(); _delay_ms(1000); LED_LOW();
-        } 
-        else {
-             // Cisza/Błąd wysyłania
-             LED_HIGH(); _delay_ms(20); LED_LOW();
-        }
-        
-        _delay_ms(1000);
+        NRF_send_packet(&pkt); //wyślij dane
+        blink_led(3, 100); //sygnalizacja wysłania danych
+        _delay_ms(10000); //odczekaj sekundę przed kolejnym pomiarem
     }
 }
