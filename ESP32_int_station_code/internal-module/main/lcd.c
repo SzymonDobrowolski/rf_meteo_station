@@ -35,8 +35,6 @@ void lcd_init() {
     // Biblioteka ili9340.c używa tych zmiennych do komunikacji!
     lcd._dc = DC_PIN;
     lcd._bl = BL_PIN;
-    lcd._width = 240;  // Wstępne ustawienie
-    lcd._height = 320; // Wstępne ustawienie
 
     // 3. Hardware Reset ekranu (Kluczowe dla ILI9341)
     // Ekran musi zostać zresetowany przed inicjalizacją
@@ -63,10 +61,9 @@ void lcd_init() {
 
     // 5. Właściwa inicjalizacja sterownika
     // Teraz, gdy piny w strukturze są ustawione, ta funkcja zadziała poprawnie
-    lcdInit(&lcd, 0x9341, 240, 320, 0, 0);
-    
-    ESP_LOGI(TAG, "LCD Initialized");
-    
+    lcdInit(&lcd, 0x9341, 320, 240, 0, 0);
     lcdBacklightOn(&lcd);
-    lcdSetFontDirection(&lcd, DIRECTION0);
+    spi_master_write_comm_byte(&lcd, 0x36); //ustawienie orientacji poziomej
+    spi_master_write_data_byte(&lcd, 0xA8); //ustawienie orientacji poziomej
+    ESP_LOGI(TAG, "LCD Initialized");
 }

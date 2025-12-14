@@ -54,19 +54,20 @@ void nrf_receiver_task(void *pvParameters) {
 
 void lcd_update_task(void *pvParameters) {
     char buffer[64];
+    lcdFillScreen(&lcd, WHITE);
+    lcdDrawRect(&lcd, 0, 0, 150, 80, BLACK);
+    lcdDrawString(&lcd, fx, 10, 20, (uint8_t *)"Dane z czujnika", BLACK);
     while(1)
     {
-        lcdFillScreen(&lcd, WHITE);
-
-        sprintf(buffer, "Temp: %.2f C", data.temp_hundredths / 100.0f);
         lcdSetFontDirection(&lcd, DIRECTION0);
-        lcdDrawString(&lcd, fx, 10, 30, (uint8_t*)buffer, BLACK);
+        sprintf(buffer, "Temp: %.2f C", data.temp_hundredths / 100.0f);
+        lcdDrawString(&lcd, fx, 10, 35, (uint8_t*)buffer, BLACK);
 
         sprintf(buffer, "Hum: %.2f %%", data.hum_x1024 / 1024.0f);
-        lcdDrawString(&lcd, fx, 10, 80, (uint8_t*)buffer, GREEN);
+        lcdDrawString(&lcd, fx, 10, 50, (uint8_t*)buffer, GREEN);
 
         sprintf(buffer, "Press: %.2f hPa", data.pressure_pa / 100.0f);
-        lcdDrawString(&lcd, fx, 10, 130, (uint8_t*)buffer, RED);
+        lcdDrawString(&lcd, fx, 10, 65, (uint8_t*)buffer, RED);
 
         vTaskDelay(pdMS_TO_TICKS(500)); //odświeżanie co 500 ms
     }
