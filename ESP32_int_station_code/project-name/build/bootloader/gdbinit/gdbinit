@@ -1,0 +1,2 @@
+source D:/Github/stacja_pogodowa/rf_meteo_station/ESP32_int_station_code/project-name/build/bootloader/gdbinit/symbols
+source D:/Github/stacja_pogodowa/rf_meteo_station/ESP32_int_station_code/project-name/build/bootloader/gdbinit/connect

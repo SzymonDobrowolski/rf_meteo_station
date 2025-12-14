@@ -12,6 +12,8 @@
 
 #define NRF_CE_PIN GPIO_NUM_17
 
+static const char *TAG = "NRF";
+
 const uint8_t RX_ADDRESS[5] = {'A', 'T', '4', '1', '4'};
 
 void nrf_write_register(spi_device_handle_t spi, uint8_t reg, uint8_t data)
@@ -95,6 +97,18 @@ void nrf_read_buf(spi_device_handle_t spi, uint8_t cmd, uint8_t *buffer, uint8_t
 
 void nrf_init(spi_device_handle_t *spi)
 {
+    esp_err_t ret;
+    spi_device_interface_config_t nrfcfg = {
+        .clock_speed_hz = 5*1000*1000,   // 5 MHz jest OK dla NRF
+        .mode = 0,                       
+        .spics_io_num = GPIO_NUM_22,
+        .queue_size = 7                  // POPRAWKA 3: Wymagane > 0
+    };
+
+    ret = spi_bus_add_device(VSPI_HOST, &nrfcfg, &nrf_handle);
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NRF Initialized");
+
     gpio_reset_pin(NRF_CE_PIN);
     gpio_set_direction(NRF_CE_PIN, GPIO_MODE_OUTPUT);
     gpio_set_level(NRF_CE_PIN, 0);

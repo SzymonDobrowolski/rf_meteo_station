@@ -51,7 +51,7 @@ int main(void) {
 
     while (1) {
         uint8_t data[8];
-        BME280_ReadBytes(0xF7, data, 8);
+        //BME280_ReadBytes(0xF7, data, 8);
 
         // ciśnienie (20 bit)
         uint32_t raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
@@ -65,9 +65,9 @@ int main(void) {
 
         //Tutaj jest przyklzd kompensacji, potem wstawimy prawdziwe funkcje
         
-        pkt.temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
-        pkt.pressure_pa    = BME280_Compensate_P(raw_press); //Pa
-        pkt.hum_x1024      = BME280_Compensate_H(raw_hum);
+        pkt.temp_hundredths = 966;//BME280_Compensate_T(raw_temp); //0.01°C
+        pkt.pressure_pa    = 1410;//BME280_Compensate_P(raw_press); //Pa
+        pkt.hum_x1024      = 2137;//BME280_Compensate_H(raw_hum);
         
         NRF_write_reg(0x07, 0x70); 
 

@@ -23,31 +23,10 @@ void spi_init(void)
         .max_transfer_sz = 4096
     };
 
-    spi_device_interface_config_t nrfcfg = {
-        .clock_speed_hz = 5*1000*1000,   // 5 MHz jest OK dla NRF
-        .mode = 0,                       
-        .spics_io_num = GPIO_NUM_22,
-        .queue_size = 7                  // POPRAWKA 3: Wymagane > 0
-    };
-
-    spi_device_interface_config_t lcdcfg = {
-        .clock_speed_hz = 1*1000*1000,   // 1 MHz
-        .mode = 0,                       
-        .spics_io_num = GPIO_NUM_21,
-        .queue_size = 7                  // POPRAWKA 3: Wymagane > 0
-    };
-
-    // POPRAWKA 2: Usunięto podwójne wywołania. 
-    // Wywołujemy raz i od razu sprawdzamy błąd.
     
     ret = spi_bus_initialize(VSPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
     ESP_ERROR_CHECK(ret);
 
-    ret = spi_bus_add_device(VSPI_HOST, &nrfcfg, &nrf_handle);
-    ESP_ERROR_CHECK(ret);
-
-    ret = spi_bus_add_device(VSPI_HOST, &lcdcfg, &lcd_handle);
-    ESP_ERROR_CHECK(ret);
 
     ESP_LOGI(TAG, "SPI initialized");
 }

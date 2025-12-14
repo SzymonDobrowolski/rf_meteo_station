@@ -6,10 +6,35 @@
 #include "spi_init.h"
 #include "uart_init.h"
 #include "nrf.h"
+#include "ili9340.h"
+#include "fontx.h"
+#include "esp_spiffs.h"
+#include "esp_log.h"
+#include "lcd.h"
 
-SensorData data;
+
+TFT_t lcd; //odnośnik do naszego ekranu
+SensorData data; //sturktura danych z czujnika
 spi_device_handle_t nrf_handle = NULL;
 spi_device_handle_t lcd_handle = NULL;
+
+FontxFile fx[2];
+
+void init_spiffs()
+{
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiflash",
+        .partition_label = NULL,
+        .max_files = 5,
+        .format_if_mount_failed = true
+    };
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE("SPIFFS", "Błąd montowania SPIFFS");
+    } else {
+        ESP_LOGI("SPIFFS", "SPIFFS zamontowany pod /spiflash");
+    }
+}
 
 void nrf_receiver_task(void *pvParameters) {
     while(1)
@@ -27,12 +52,42 @@ void nrf_receiver_task(void *pvParameters) {
     }
 }
 
+void lcd_update_task(void *pvParameters) {
+    char buffer[64];
+    while(1)
+    {
+        lcdFillScreen(&lcd, WHITE);
+
+        sprintf(buffer, "Temp: %.2f C", data.temp_hundredths / 100.0f);
+        lcdSetFontDirection(&lcd, DIRECTION0);
+        lcdDrawString(&lcd, fx, 10, 30, (uint8_t*)buffer, BLACK);
+
+        sprintf(buffer, "Hum: %.2f %%", data.hum_x1024 / 1024.0f);
+        lcdDrawString(&lcd, fx, 10, 80, (uint8_t*)buffer, GREEN);
+
+        sprintf(buffer, "Press: %.2f hPa", data.pressure_pa / 100.0f);
+        lcdDrawString(&lcd, fx, 10, 130, (uint8_t*)buffer, RED);
+
+        vTaskDelay(pdMS_TO_TICKS(500)); //odświeżanie co 500 ms
+    }
+}
+
 void app_main(void)
 {
     gpio_init();
     spi_init();
     uart_init();
     nrf_init(&nrf_handle); //inicjalizacja NRF
+    init_spiffs();
+    lcd_init(); //inicjalizacja LCD
+
+    InitFontx(fx, "/spiflash/ILGH16XB.FNT", "");
+         if (!OpenFontx(fx)) {
+        ESP_LOGE("FONT", "Nie udało się otworzyć fontu");
+        } else {
+        ESP_LOGI("FONT", "Font otwarty poprawnie");
+        }
 
     xTaskCreate(nrf_receiver_task, "NRF Receiver Task", 4096, NULL, 5, NULL); //odbieranie danych z NRF
+    xTaskCreate(lcd_update_task, "LCD Update Task", 8192, NULL, 5, NULL); //aktualizacja LCD
 }
