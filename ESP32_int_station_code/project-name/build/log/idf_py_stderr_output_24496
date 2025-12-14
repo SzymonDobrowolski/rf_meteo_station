@@ -1,1 +1,0 @@
-Command: cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=d:\ESP_IDF_TOOLS\python_env\idf5.5_py3.11_env\Scripts\python.exe -DESP_PLATFORM=1 -DSDKCONFIG='d:\Github\stacja_pogodowa\rf_meteo_station\ESP32_int_station_code\project-name\sdkconfig' -DCCACHE_ENABLE=1 D:\Github\stacja_pogodowa\rf_meteo_station\ESP32_int_station_code\project-name
