@@ -1,6 +1,0 @@
-source "D:/ESP_IDF/v5.5.1/esp-idf/components/bootloader/Kconfig.projbuild"
-source "D:/ESP_IDF/v5.5.1/esp-idf/components/esp_app_format/Kconfig.projbuild"
-source "D:/ESP_IDF/v5.5.1/esp-idf/components/esp_rom/Kconfig.projbuild"
-source "D:/ESP_IDF/v5.5.1/esp-idf/components/esptool_py/Kconfig.projbuild"
-source "D:/ESP_IDF/v5.5.1/esp-idf/components/partition_table/Kconfig.projbuild"
-source "D:/Github/stacja_pogodowa/rf_meteo_station/ESP32_int_station_code/internal_module/components/ili9340/Kconfig.projbuild"
