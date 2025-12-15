@@ -20,7 +20,7 @@ void spi_init(void)
         .sclk_io_num = GPIO_NUM_18,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 4096
+        .max_transfer_sz = 20480
     };
 
     

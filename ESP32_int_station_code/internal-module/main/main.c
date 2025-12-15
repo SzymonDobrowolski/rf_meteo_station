@@ -11,6 +11,7 @@
 #include "esp_spiffs.h"
 #include "esp_log.h"
 #include "lcd.h"
+#include "logo.h"
 
 
 TFT_t lcd; //odnośnik do naszego ekranu
@@ -55,21 +56,28 @@ void nrf_receiver_task(void *pvParameters) {
 void lcd_update_task(void *pvParameters) {
     char buffer[64];
     lcdFillScreen(&lcd, WHITE);
-    lcdDrawRect(&lcd, 0, 0, 150, 80, BLACK);
-    lcdDrawString(&lcd, fx, 10, 20, (uint8_t *)"Dane z czujnika", BLACK);
+    lcdDrawRect(&lcd, 0, 0, 200, 100, BLACK); //obszar dancyh
+    lcdDrawRect(&lcd, 201, 0, 320, 100, BLACK); //obszar zegara
+    lcdDrawString(&lcd, fx, 240, 25, (uint8_t *)"Data", BLACK);
+    lcdDrawString(&lcd, fx, 240, 65, (uint8_t *)"Czas", BLACK);
+    lcdDrawRect(&lcd, 0, 101, 320, 240, BLACK);  //obszar wykresu
+    //lcdDrawString(&lcd, fx, 0, 150, (uint8_t *)"Tutaj bedzie wykres", BLACK);
+    ili9341_draw_image(&lcd,110,120,LOGO_WIDTH,LOGO_HEIGHT,image_data_logo_pp_100px);
     while(1)
     {
         lcdSetFontDirection(&lcd, DIRECTION0);
+        lcdDrawFillRect(&lcd,0,0,199,99,WHITE);
+        lcdDrawString(&lcd, fx, 5, 25, (uint8_t *)"Dane z czujnika", BLACK);
         sprintf(buffer, "Temp: %.2f C", data.temp_hundredths / 100.0f);
-        lcdDrawString(&lcd, fx, 10, 35, (uint8_t*)buffer, BLACK);
+        lcdDrawString(&lcd, fx, 5, 45, (uint8_t*)buffer, BLACK);
 
         sprintf(buffer, "Hum: %.2f %%", data.hum_x1024 / 1024.0f);
-        lcdDrawString(&lcd, fx, 10, 50, (uint8_t*)buffer, GREEN);
+        lcdDrawString(&lcd, fx, 5, 65, (uint8_t*)buffer, BLACK);
 
         sprintf(buffer, "Press: %.2f hPa", data.pressure_pa / 100.0f);
-        lcdDrawString(&lcd, fx, 10, 65, (uint8_t*)buffer, RED);
+        lcdDrawString(&lcd, fx, 5, 85, (uint8_t*)buffer, BLACK);
 
-        vTaskDelay(pdMS_TO_TICKS(500)); //odświeżanie co 500 ms
+        vTaskDelay(pdMS_TO_TICKS(10000)); //odświeżanie co 500 ms
     }
 }
 
@@ -82,7 +90,7 @@ void app_main(void)
     init_spiffs();
     lcd_init(); //inicjalizacja LCD
 
-    InitFontx(fx, "/spiflash/ILGH16XB.FNT", "");
+    InitFontx(fx, "/spiflash/ILMH24XB.FNT", "");
          if (!OpenFontx(fx)) {
         ESP_LOGE("FONT", "Nie udało się otworzyć fontu");
         } else {

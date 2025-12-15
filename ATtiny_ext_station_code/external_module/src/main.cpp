@@ -62,6 +62,8 @@ int main(void) {
         // wilgotność (16 bit)
         uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
         
+        NRF_write_reg(0x00, 0x0A); //na nowo włączamy zasilanie radia na czas transmisji
+        _delay_ms(10); //uśpienie potrzebne na uruchomienie się oscylatora układu
 
         //Tutaj jest przyklzd kompensacji, potem wstawimy prawdziwe funkcje
         
@@ -69,10 +71,14 @@ int main(void) {
         pkt.pressure_pa    = 1410;//BME280_Compensate_P(raw_press); //Pa
         pkt.hum_x1024      = 2137;//BME280_Compensate_H(raw_hum);
         
-        NRF_write_reg(0x07, 0x70); 
+        NRF_write_reg(0x07, 0x70); //wyczyszczenie flag statusu
 
         NRF_send_packet(&pkt); //wyślij dane
         blink_led(3, 100); //sygnalizacja wysłania danych
-        _delay_ms(1000); //odczekaj sekundę przed kolejnym pomiarem
+
+        NRF_write_reg(0x00,0x00); //całkowite uśpienie radia nrf na czas braku transmisji
+        //_delay_ms(1000*60*30) //przykładowe uśpienie na 30 minut
+
+        _delay_ms(5000); //uśpienie tylko w trakcie testu komunikacji
     }
 }

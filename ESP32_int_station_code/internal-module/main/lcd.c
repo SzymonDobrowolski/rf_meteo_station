@@ -47,7 +47,7 @@ void lcd_init() {
 
     // 4. Konfiguracja SPI
     spi_device_interface_config_t lcdcfg = {
-        .clock_speed_hz = 20 * 1000 * 1000, // ZWIĘKSZONO: 1 MHz to bardzo wolno dla ekranu, 20 MHz jest bezpieczne
+        .clock_speed_hz = 40 * 1000 * 1000, // ZWIĘKSZONO: 1 MHz to bardzo wolno dla ekranu, 20 MHz jest bezpieczne
         .mode = 0,
         .spics_io_num = CS_PIN,             // CS na GPIO 21
         .queue_size = 7,
@@ -66,4 +66,58 @@ void lcd_init() {
     spi_master_write_comm_byte(&lcd, 0x36); //ustawienie orientacji poziomej
     spi_master_write_data_byte(&lcd, 0xA8); //ustawienie orientacji poziomej
     ESP_LOGI(TAG, "LCD Initialized");
+
+    
+}
+
+// Wklej to do lcd.c (zastąp starą wersję)
+
+void ili9341_draw_image(TFT_t *dev, uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t *bitmap) {
+    
+    // 1. Pobieramy uchwyt SPI i pin DC bezpośrednio z Twojej struktury lcd
+    spi_device_handle_t spi = dev->_TFT_Handle;
+    int dc_pin = dev->_dc;
+
+    // --- Funkcje pomocnicze lokalne (żeby nie polegać na globalnych makrach) ---
+    void local_send_cmd(uint8_t cmd) {
+        gpio_set_level(dc_pin, 0); // DC Low = Command
+        spi_transaction_t t = {0};
+        t.length = 8;
+        t.tx_buffer = &cmd;
+        spi_device_polling_transmit(spi, &t);
+    }
+
+    void local_send_data(const uint8_t *data, size_t len) {
+        if (len == 0) return;
+        gpio_set_level(dc_pin, 1); // DC High = Data
+        spi_transaction_t t = {0};
+        t.length = len * 8;
+        t.tx_buffer = data;
+        spi_device_polling_transmit(spi, &t);
+    }
+    // -------------------------------------------------------------------------
+
+    // 2. Ustawienie obszaru rysowania (Okno adresowe)
+    
+    // --- KOLUMNA (X) ---
+    local_send_cmd(0x2A); 
+    uint8_t data_x[] = { 
+        (uint8_t)(x >> 8), (uint8_t)(x & 0xFF), 
+        (uint8_t)((x + w - 1) >> 8), (uint8_t)((x + w - 1) & 0xFF) 
+    };
+    local_send_data(data_x, 4);
+
+    // --- WIERSZ (Y) ---
+    local_send_cmd(0x2B);
+    uint8_t data_y[] = { 
+        (uint8_t)(y >> 8), (uint8_t)(y & 0xFF), 
+        (uint8_t)((y + h - 1) >> 8), (uint8_t)((y + h - 1) & 0xFF) 
+    };
+    local_send_data(data_y, 4);
+
+    // 3. Wysłanie pikseli
+    local_send_cmd(0x2C); // Memory Write
+    
+    size_t buffer_size = w * h * 2;
+    local_send_data((const uint8_t*)bitmap, buffer_size);
 }
