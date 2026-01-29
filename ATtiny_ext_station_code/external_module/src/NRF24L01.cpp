@@ -1,15 +1,16 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
+#include "Config.h"
 #include "SPI.h"
 #include "NRF24L01.h"
 
 //Tutaj są makra do włączania/wyłączania pinów bo sam już się myliłem jak pisałem po portch
-#define NRF_CE_HIGH()   (PORTA.OUTSET = PIN5_bm)
-#define NRF_CE_LOW()    (PORTA.OUTCLR = PIN5_bm)
+#define NRF_CE_HIGH()   (SPI_PORT.OUTSET = NRF_CE_PIN)
+#define NRF_CE_LOW()    (SPI_PORT.OUTCLR = NRF_CE_PIN)
 
-#define NRF_CSN_HIGH()  (PORTA.OUTSET = PIN4_bm)
-#define NRF_CSN_LOW()   (PORTA.OUTCLR = PIN4_bm)
+#define NRF_CSN_HIGH()  (SPI_PORT.OUTSET = NRF_CSN_PIN)
+#define NRF_CSN_LOW()   (SPI_PORT.OUTCLR = NRF_CSN_PIN)
 
 uint8_t NRF_read_reg(uint8_t reg)
 {
@@ -33,8 +34,8 @@ void NRF_set_tx_mode(void)
     NRF_write_reg(0x00, 0x0A); 
 
     // 2. Ustawienia radiowe (Muszą być identyczne jak w ESP32)
-    NRF_write_reg(0x05, 76);     // Kanał 76 (2476 MHz)
-    NRF_write_reg(0x06, 0x07);   // 2 Mbps, 0 dBm
+    NRF_write_reg(0x05, Channel);     // Kanał 76 (2476 MHz)
+    NRF_write_reg(0x06, NRF_SPEED);   // 2 Mbps, 0 dBm
 
     // 3. Włączenie Auto-ACK (Ważne dla stabilności)
     NRF_write_reg(0x01, 0x01);   // EN_AA na Pipe 0
@@ -44,22 +45,14 @@ void NRF_set_tx_mode(void)
     // 4. Ustawienie adresu TX (Dokąd wysyłamy) - "AT414"
     NRF_CSN_LOW();
     SPI_transfer(0x20 | 0x10);   // Rejestr TX_ADDR
-    SPI_transfer('A');
-    SPI_transfer('T');
-    SPI_transfer('4');
-    SPI_transfer('1');
-    SPI_transfer('4');
+    SPI_SEND_ADDRESS();
     NRF_CSN_HIGH();
 
     // 5. Ustawienie adresu RX_P0 (Żeby odebrać potwierdzenie ACK od ESP)
     // Musi być taki sam jak TX_ADDR!
     NRF_CSN_LOW();
     SPI_transfer(0x20 | 0x0A);   // Rejestr RX_ADDR_P0
-    SPI_transfer('A');
-    SPI_transfer('T');
-    SPI_transfer('4');
-    SPI_transfer('1');
-    SPI_transfer('4');
+    SPI_SEND_ADDRESS();
     NRF_CSN_HIGH();
 
     // CE niski - radio w trybie Standby-I, gotowe do strzału (funkcja send_packet zrobi impuls)
@@ -70,17 +63,13 @@ void NRF_set_rx_mode(void) //a tu odbior, no i trzeba będzie to przepisać dla 
 {
     NRF_write_reg(0x00,(1 << 1) | (1 << 0)); // PWR_UP  // PRIM_RX = RX
 
-    NRF_write_reg(0x05, 76);  // ten sam kanał
+    NRF_write_reg(0x05, Channel);  // ten sam kanał
     NRF_write_reg(0x06, 0x0F);
 
     // RX address same as TX
     NRF_CSN_LOW();
     SPI_transfer(0x20 | 0x0A);
-    SPI_transfer('A');
-    SPI_transfer('T');
-    SPI_transfer('4');
-    SPI_transfer('1');
-    SPI_transfer('4');
+    SPI_SEND_ADDRESS();
     NRF_CSN_HIGH();
 
     NRF_CE_HIGH();  // włącz odbiór

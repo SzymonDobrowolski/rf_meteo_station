@@ -1,13 +1,15 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
+#include "Config.h"
+
 void SPI_init(void)
 {
     //PA1 = MOSI → output *zgodnie ze schematem naszym*
     //PA3 = SCK  → output
-    PORTA.DIRSET = PIN1_bm | PIN3_bm;
+    SPI_PORT.DIRSET = MOSI_PIN | SCK_PIN;
     //PA2 = MISO → input
-    PORTA.DIRCLR = PIN2_bm;
+    SPI_PORT.DIRCLR = MISO_PIN;
     //Enable SPI in master mode, clock prescaler = /4
     SPI0.CTRLA = SPI_ENABLE_bm | SPI_MASTER_bm | SPI_PRESC_DIV4_gc; //tutaj można dać większy przeskaler, jak 5Mhz będzie za dużo jak na nasze sciezki
     //MODE 0 (CPOL=0, CPHA=0)

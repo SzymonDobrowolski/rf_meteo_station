@@ -3,25 +3,22 @@
  * Funkcje: Nadawanie + Wykrywanie Resetu Radia (Brown-out detection)
  */
 
-#define F_CPU 20000000UL // 20 MHz
-
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/interrupt.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "Config.h"
 #include "SPI.h"
 #include "NRF24L01.h"
-#include "TWI.h"
+#include "SoftwareI2C.h"
 #include "BME280.h"
-
-#define LED_PIN PIN6_bm
-#define SCL_PIN PIN3_bm
-#define SDA_PIN PIN2_bm
+#include "RTC_sleep.h"
 
 // Makra LED
-#define LED_ON()   (PORTA.OUTSET = LED_PIN)
-#define LED_OFF()  (PORTA.OUTCLR = LED_PIN)
+#define LED_ON()   (LED_PORT.OUTSET = LED_PIN)
+#define LED_OFF()  (LED_PORT.OUTCLR = LED_PIN)
 
 // Funkcja pomocnicza do mrugania (ilość razy, czas ms)
 void blink_led(uint8_t count, uint16_t ms) {
@@ -36,49 +33,60 @@ void blink_led(uint8_t count, uint16_t ms) {
 int main(void) {
     _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0); 
 
-    PORTA.DIRSET = LED_PIN | PIN4_bm | PIN5_bm; // LED, CSN, CE jako wyjścia
+    PORTA.DIRSET = PIN6_bm | PIN4_bm | PIN5_bm; // LED, CSN, CE jako wyjścia
     LED_OFF();
 
     SPI_init();
     TWI_Init();
     NRF_init();
+    RTC_Init();
+
+    sei();//włączamy globalne przerwania
     
     NRF_set_tx_mode(); //ustawienie nrf jako nadajnik
     
-    //BME280_Init();
-    //BME280_ReadCalibration();
+    BME280_Init();
+    BME280_ReadCalibration();
     sensor_packet_t pkt;
 
     while (1) {
         uint8_t data[8];
-        //BME280_ReadBytes(0xF7, data, 8);
+        BME280_ReadBytes(0xF7, data, 8);
 
         // ciśnienie (20 bit)
-        uint32_t raw_press = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
+        uint32_t raw_press = ((uint32_t)data[0] << 12) | ((uint32_t)data[1] << 4) | ((uint32_t)data[2] >> 4);
 
         // temperatura (20 bit)
-        uint32_t raw_temp  = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
+        uint32_t raw_temp  = ((uint32_t)data[3] << 12) | ((uint32_t)data[4] << 4) | ((uint32_t)data[5] >> 4);
 
         // wilgotność (16 bit)
-        uint32_t raw_hum   = (data[6] << 8)  | (data[7]);
+        uint32_t raw_hum   = ((uint32_t)data[6] << 8)  | ((uint32_t)data[7]);
         
         NRF_write_reg(0x00, 0x0A); //na nowo włączamy zasilanie radia na czas transmisji
         _delay_ms(10); //uśpienie potrzebne na uruchomienie się oscylatora układu
 
         //Tutaj jest przyklzd kompensacji, potem wstawimy prawdziwe funkcje
         
-        pkt.temp_hundredths = 966;//BME280_Compensate_T(raw_temp); //0.01°C
-        pkt.pressure_pa    = 1410;//BME280_Compensate_P(raw_press); //Pa
-        pkt.hum_x1024      = 2137;//BME280_Compensate_H(raw_hum);
+        pkt.temp_hundredths = BME280_Compensate_T(raw_temp); //0.01°C
+        pkt.pressure_pa    = BME280_Compensate_P(raw_press); //Pa
+        pkt.hum_x1024      = BME280_Compensate_H(raw_hum);
         
         NRF_write_reg(0x07, 0x70); //wyczyszczenie flag statusu
 
         NRF_send_packet(&pkt); //wyślij dane
         blink_led(3, 100); //sygnalizacja wysłania danych
-
+        //_delay_ms(10); //odkomentowac w przypaku zakomentowania blink_led();
         NRF_write_reg(0x00,0x00); //całkowite uśpienie radia nrf na czas braku transmisji
-        //_delay_ms(1000*60*30) //przykładowe uśpienie na 30 minut
 
-        _delay_ms(5000); //uśpienie tylko w trakcie testu komunikacji
+        //_delay_ms(5000); //uśpienie tylko w trakcie testu komunikacji
+        //zamiast delay go to sleep
+        GoToSleep(); 
+
     }
+}
+
+// Obsługa przerwania - budzik zadzwonił
+ISR(RTC_PIT_vect) {
+    // Wyczyść flagę przerwania, żeby nie wpaść w pętlę
+    RTC.PITINTFLAGS = RTC_PI_bm;
 }

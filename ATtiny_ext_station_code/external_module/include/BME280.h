@@ -1,8 +1,6 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-#define BME280_ADDR 0x76 //lub 0x77 zaleznie od plytki
-
 //globalne zmienne do kalibracji pozniej sie zmieni na lokalne jak bedzie dzialac
 static uint16_t dig_T1;
 static int16_t  dig_T2;
