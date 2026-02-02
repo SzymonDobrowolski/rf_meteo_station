@@ -54,7 +54,7 @@
 // ZAKRESY POMIAROWE
 #define MIN_TEMP 15.0f
 #define MAX_TEMP 35.0f
-#define MIN_HUM  20.0f
+#define MIN_HUM  15.0f
 #define MAX_HUM  80.0f
 #define MIN_PRESS 980.0f
 #define MAX_PRESS 1040.0f
