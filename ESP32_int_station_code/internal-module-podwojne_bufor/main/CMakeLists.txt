@@ -1,0 +1,2 @@
+idf_component_register(SRCS "sntp.c" "main.c" "gpio_init.c" "uart_init.c" "spi_init.c" "nrf.c" "lcd.c" "wifi_project.c" "nrf.c"
+                    INCLUDE_DIRS "." REQUIRES ili9340 driver spiffs nvs_flash esp_wifi esp_netif driver spi_flash)

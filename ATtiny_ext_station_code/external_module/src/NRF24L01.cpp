@@ -108,7 +108,7 @@ void NRF_send_packet(sensor_packet_t *pkt)
 void NRF_init(void)
 {
     //CSN, CE jako wyjścia
-    PORTA.DIRSET = PIN4_bm | PIN5_bm;
+    SPI_PORT.DIRSET = NRF_CSN_PIN | NRF_CE_PIN;
     NRF_CE_LOW();
     NRF_CSN_HIGH();
     SPI_init();     //inicjalizacja SPI

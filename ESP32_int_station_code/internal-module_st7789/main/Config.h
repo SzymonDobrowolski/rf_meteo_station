@@ -31,7 +31,7 @@ typedef struct __attribute__((packed)) {
 #define RESET_PIN GPIO_NUM_25
 #define BL_PIN GPIO_NUM_27
 //LCD Settings
-#define LCD_TYPE 0x9341
+#define LCD_TYPE 0x7789
 #define LCD_WIDTH  320
 #define LCD_HEIGHT 240
 //Optional LCD

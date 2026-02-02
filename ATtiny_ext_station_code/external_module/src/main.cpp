@@ -33,7 +33,7 @@ void blink_led(uint8_t count, uint16_t ms) {
 int main(void) {
     _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0); 
 
-    PORTA.DIRSET = PIN6_bm | PIN4_bm | PIN5_bm; // LED, CSN, CE jako wyjścia
+    LED_PORT.DIRSET = LED_PIN; // LED jako wyjście
     LED_OFF();
 
     SPI_init();

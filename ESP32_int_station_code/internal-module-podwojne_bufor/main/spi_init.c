@@ -22,7 +22,7 @@ void spi_init(void)
         .sclk_io_num = SPI_SCLK,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = 20480
+        .max_transfer_sz = 320 * 240 * 2 + 100
     };
 
     
