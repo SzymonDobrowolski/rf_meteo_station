@@ -21,5 +21,6 @@
     "spi_init.h": "c",
     "freertos.h": "c"
   },
-  "idf.flashType": "UART"
+  "idf.flashType": "UART",
+  "idf.currentSetup": "C:\\Users\\Rafal\\esp\\v5.5.1\\esp-idf"
 }

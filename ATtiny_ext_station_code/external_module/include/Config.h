@@ -16,7 +16,7 @@ blink_led(3, 100); //sygnalizacja wysłania danych w pliku main.cpp
 */
 
 #define LED_PORT  PORTA
-#define LED_PIN   PIN6_bm
+#define LED_PIN   PIN7_bm //lub PIN6_bm w zależności od płytki
 
 #define NRF_CE_PIN PIN5_bm
 #define NRF_CSN_PIN PIN4_bm

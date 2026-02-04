@@ -61,8 +61,8 @@ void lcd_init() {
     // Teraz, gdy piny w strukturze są ustawione, ta funkcja zadziała poprawnie
     lcdInit(&lcd, LCD_TYPE, LCD_WIDTH, LCD_HEIGHT, 0, 0);
     lcdBacklightOn(&lcd);
-    spi_master_write_comm_byte(&lcd, 0x36); //ustawienie orientacji poziomej
-    spi_master_write_data_byte(&lcd, 0xA8); //ustawienie orientacji poziomej
+    spi_master_write_comm_byte(&lcd, LCD_ORIENTATION_1); //ustawienie orientacji poziomej
+    spi_master_write_data_byte(&lcd, LCD_ORIENTATION_2); //ustawienie orientacji poziomej
     ESP_LOGI(TAG, "LCD Initialized");
 
     
