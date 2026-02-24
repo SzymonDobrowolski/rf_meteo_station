@@ -47,7 +47,7 @@ void lcd_init(void) {
     esp_lcd_panel_init(panel_handle);
 
     // Inwersja kolorów (zostaw false lub daj true, by zlikwidować ew. negatyw)
-    esp_lcd_panel_invert_color(panel_handle, true); 
+    esp_lcd_panel_invert_color(panel_handle, false); 
 
     // Zerujemy ukryte marginesy pamięci
     esp_lcd_panel_set_gap(panel_handle, 0, 0);

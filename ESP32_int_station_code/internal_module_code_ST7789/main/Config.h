@@ -45,5 +45,5 @@ typedef struct __attribute__((packed)) {
 
 // NTC
 #define SSID "Internet domowy Lisiak"
-#define PASSWORD "LismaN1410"
+#define PASSWORD  "LismaN1410"
 #define SNTP_SERVER "pool.ntp.org"

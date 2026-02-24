@@ -1,3 +1,4 @@
 #pragma once
 #include <stdio.h>
-int wifi_connect_station(const char *ssid, const char *password);
+//int wifi_connect_station(const char *ssid, const char *password);
+bool wifi_connect_station(const char *ssid, const char *password);

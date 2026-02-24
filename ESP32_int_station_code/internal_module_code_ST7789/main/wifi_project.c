@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_project.h"
+extern bool is_wifi_connecting;
 
 static const char *TAG = "WIFI_MODULE";
 
@@ -20,37 +21,37 @@ static int s_retry_num = 0;
 #define MAX_RETRY 5
 
 // --- OBSŁUGA ZDARZEŃ (TO JEST "MÓZG" WIFI) ---
-static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
-{
-    // 1. WiFi wystartowało -> Próbujemy się połączyć
+// W wifi_project.c
+
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        is_wifi_connecting = true; 
         esp_wifi_connect();
-    } 
-    // 2. Połączenie zerwane lub nieudane -> Próbujemy ponownie
-    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (s_retry_num < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGI(TAG, "Ponawiam próbe połączenia z AP...");
+            is_wifi_connecting = true;
+            ESP_LOGI(TAG, "Ponawianie proby polaczenia...");
         } else {
-            // Poddajemy się po 5 próbach
+            is_wifi_connecting = false;
+            // DODAJ TO: Informujemy funkcje wifi_connect_station o bledzie
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGI(TAG,"Nie udalo sie polaczyc z AP");
-    } 
-    // 3. Sukces! Dostaliśmy adres IP (to oznacza pełne połączenie)
-    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "Uzyskano IP: " IPSTR, IP2STR(&event->ip_info.ip));
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        is_wifi_connecting = false; 
         s_retry_num = 0;
-        // Ustawiamy flagę sukcesu, żeby funkcja główna przestała czekać
+        // DODAJ TO: Informujemy funkcje wifi_connect_station o sukcesie
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
-int wifi_connect_station(const char *ssid, const char *password)
+
+bool wifi_connect_station(const char *ssid, const char *password)
 {
+    is_wifi_connecting = true; // Ustawiamy flagę, że zaczynamy łączyć się
+
     // 1. Tworzymy grupę zdarzeń
     s_wifi_event_group = xEventGroupCreate();
 
@@ -70,12 +71,12 @@ int wifi_connect_station(const char *ssid, const char *password)
     esp_event_handler_instance_t instance_got_ip;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
-                                                        &event_handler,
+                                                        &wifi_event_handler,
                                                         NULL,
                                                         &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
+                                                        &wifi_event_handler,
                                                         NULL,
                                                         &instance_got_ip));
 
@@ -112,12 +113,12 @@ int wifi_connect_station(const char *ssid, const char *password)
     // 10. Analiza wyniku
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Polaczono z SSID: %s", ssid);
-        return 1;
+        return true;
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Blad polaczenia z SSID: %s", ssid);
-        return 0;
+        return false;
     } else {
         ESP_LOGE(TAG, "Nieoczekiwane zdarzenie");
-        return 0;
+        return false;
     }
 }
