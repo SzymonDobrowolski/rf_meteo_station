@@ -22,6 +22,7 @@
 #include "sntp.h"
 #include "lcd.h"
 #include "Config.h"
+#include "touch.h"
 
 static const char *TAG = "MAIN";
 
@@ -51,6 +52,7 @@ lv_obj_t * lbl_time;
 lv_obj_t * lbl_date;
 lv_obj_t * icon_wifi;
 lv_obj_t * icon_wifi_err;
+lv_obj_t * icon_battery;
 
 bool is_wifi_connecting = false;
 
@@ -144,6 +146,19 @@ void start_wifi_blink(void) {
     lv_anim_start(&a);
 }
 
+// --- OBSŁUGA ZDARZEŃ (np. kliknięcie przycisku) ---
+
+static void btn_event_cb(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_CLICKED) {
+        ESP_LOGI("BUTTON", "Kliknieto Przycisk!");
+        // Wizualny test: zmień kolor tła ekranu na chwilę
+        lv_obj_set_style_bg_color(lv_scr_act(), lv_palette_main(LV_PALETTE_ORANGE), 0);
+    }
+}
+
+// --- TWORZENIE PASKA STATUSU (Czas + WiFi) ---
+
 void create_status_bar(lv_obj_t * scr) {
     lvgl_port_lock(-1);
     
@@ -212,6 +227,30 @@ void create_status_bar(lv_obj_t * scr) {
     // Domyślnie ukrywamy krzyżyk
     lv_obj_add_flag(icon_wifi_err, LV_OBJ_FLAG_HIDDEN);
 
+    // 8. Ikona baterii 
+    icon_battery = lv_label_create(status_bar);
+    lv_obj_align(icon_battery, LV_ALIGN_TOP_RIGHT, -30, 5); // Po prawej stronie paska, przed WiFi
+    lv_label_set_text(icon_battery, MY_SYM_BAT_100); // Domyślnie pełna bateria
+    lv_obj_set_style_text_font(icon_battery, &montserrat_pl_14, 0);
+    lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_GREY), 0); // Zielony kolor dla pełnej baterii
+}
+
+// --- STWORZENIE KAFELKA PRZYCISKU MENU ---
+
+void create_menu_button(lv_obj_t * scr) {
+    lv_obj_t * btn = lv_btn_create(scr);
+    lv_obj_set_size(btn, 50, 50);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
+    lv_obj_set_style_radius(btn, 25, 0); // Okrągły przycisk
+    lv_obj_set_style_bg_color(btn, lv_palette_main(LV_PALETTE_GREY), 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+
+    lv_obj_t * label = lv_label_create(btn);
+    lv_label_set_text(label, LV_SYMBOL_SETTINGS); // Symbol koła zębatego
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_18, 0); // Większa czcionka dla symbolu
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_center(label);
+    lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
 // --- TWORZENIE GŁÓWNEGO INTERFEJSU LVGL ---
@@ -219,12 +258,10 @@ void create_weather_ui(void) {
     lvgl_port_lock(-1); 
 
     lv_obj_t * scr = lv_scr_act();
-    // Tło główne ekranu (zaadaptuje się do trybu nocnego)
-    lv_obj_set_style_bg_color(scr, lv_obj_get_style_bg_color(scr, 0), 0);
 
     // 1. Kontener na kafelki (Flexbox) - rządek
     lv_obj_t * cont = lv_obj_create(scr);
-    lv_obj_set_size(cont, 320, 180); 
+    lv_obj_set_size(cont, 320, 120); 
     lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, 55); // Tuż pod status barem
     lv_obj_set_style_bg_opa(cont, 0, 0); 
     lv_obj_set_style_border_opa(cont, 0, 0);
@@ -245,7 +282,7 @@ void create_weather_ui(void) {
 
     // --- KAFELEK 1: TEMPERATURA ---
     lv_obj_t * card_temp = lv_obj_create(cont);
-    lv_obj_set_size(card_temp, 95, 150);
+    lv_obj_set_size(card_temp, 95, 100);
     lv_obj_add_style(card_temp, &style_card, 0);
     lv_obj_set_flex_flow(card_temp, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card_temp, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -257,7 +294,6 @@ void create_weather_ui(void) {
     lv_obj_t * title_temp = lv_label_create(card_temp);
     lv_label_set_text(title_temp, "TEMP");
     lv_obj_set_style_text_font(title_temp, &montserrat_pl_14, 0); // Mniejszy opis
-    lv_obj_set_style_opa(title_temp, LV_OPA_70, 0); // Lekko przygaszony
 
     lbl_temp = lv_label_create(card_temp);
     lv_obj_set_style_text_font(lbl_temp, &montserrat_pl_14, 0); // Twoja czcionka
@@ -265,7 +301,7 @@ void create_weather_ui(void) {
 
     // --- KAFELEK 2: WILGOTNOŚĆ ---
     lv_obj_t * card_hum = lv_obj_create(cont);
-    lv_obj_set_size(card_hum, 95, 150);
+    lv_obj_set_size(card_hum, 95, 100);
     lv_obj_add_style(card_hum, &style_card, 0);
     lv_obj_set_flex_flow(card_hum, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card_hum, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -277,7 +313,6 @@ void create_weather_ui(void) {
     lv_obj_t * title_hum = lv_label_create(card_hum);
     lv_label_set_text(title_hum, "WILG");
     lv_obj_set_style_text_font(title_hum, &montserrat_pl_14, 0);
-    lv_obj_set_style_opa(title_hum, LV_OPA_70, 0);
 
     lbl_hum = lv_label_create(card_hum);
     lv_obj_set_style_text_font(lbl_hum, &montserrat_pl_14, 0);
@@ -285,7 +320,7 @@ void create_weather_ui(void) {
 
     // --- KAFELEK 3: CIŚNIENIE ---
     lv_obj_t * card_press = lv_obj_create(cont);
-    lv_obj_set_size(card_press, 95, 150);
+    lv_obj_set_size(card_press, 95, 100);
     lv_obj_add_style(card_press, &style_card, 0);
     lv_obj_set_flex_flow(card_press, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(card_press, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -297,13 +332,13 @@ void create_weather_ui(void) {
     lv_obj_t * title_press = lv_label_create(card_press);
     lv_label_set_text(title_press, "CIŚN");
     lv_obj_set_style_text_font(title_press, &montserrat_pl_14, 0);
-    lv_obj_set_style_opa(title_press, LV_OPA_70, 0);
 
     lbl_press = lv_label_create(card_press);
     lv_obj_set_style_text_font(lbl_press, &montserrat_pl_14, 0);
     lv_label_set_text(lbl_press, "----");
 
-    create_status_bar(scr);
+    create_status_bar(scr); // Stworzenie paska statusu (czas + WiFi)
+    create_menu_button(scr); // Stworzenie przycisku menu (koło zębate)
     lvgl_port_unlock();
 }
 
@@ -398,6 +433,22 @@ void update_ui_task(void *pvParameters) {
             lvgl_port_unlock();
             vTaskDelay(pdMS_TO_TICKS(500)); // Aktualizuj ikonę WiFi co sekundę
         }
+            // Aktualizacja ikony baterii (przykładowa logika, dostosuj do swojego systemu pomiaru baterii)
+            /*uint8_t battery_level = get_battery_level(); // Funkcja do odczytu poziomu baterii (0-100)
+            lvgl_port_lock(-1);
+            if (battery_level > 75) {
+                lv_label_set_text(icon_battery, MY_SYM_BAT_100);
+                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_GREEN), 0);
+            } else if (battery_level > 25) {
+                lv_label_set_text(icon_battery, MY_SYM_BAT_50);
+                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_YELLOW), 0);
+            } else {
+                lv_label_set_text(icon_battery, MY_SYM_BAT_0);
+                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_RED), 0);
+            }
+            lvgl_port_unlock();
+            vTaskDelay(pdMS_TO_TICKS(60000)); // Aktualizuj ikonę baterii co minutę
+            */  
     }
     
 }
@@ -467,6 +518,7 @@ void app_main(void) {
     nrf_init(&nrf_handle);
     backlight_pwm_init();
     lcd_init();
+    lcd_touch_init(VSPI_HOST);
 
     // 2. Rysowanie początkowego interfejsu
     create_weather_ui();
