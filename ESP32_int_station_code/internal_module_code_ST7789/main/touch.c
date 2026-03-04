@@ -1,9 +1,9 @@
 #include "touch.h"
-#include "lvgl.h"          // NAPRAWA: Brakowało tego nagłówka (błąd unknown type name)
+#include "lvgl.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "Config.h"        // Tu masz definicje T_IRQ, T_CS, LCD_WIDTH itd.
+#include "Config.h"
 
 static const char *TAG = "XPT2046";
 static spi_device_handle_t touch_spi_handle;
@@ -13,44 +13,51 @@ static spi_device_handle_t touch_spi_handle;
 #define CMD_Y_READ  0x90
 
 static uint16_t xpt2046_spi_read(uint8_t command) {
-    uint8_t data[3] = { command, 0x00, 0x00 };
+    uint8_t tx_data[3] = { command, 0x00, 0x00 };
+    uint8_t rx_data[3] = { 0 };
     spi_transaction_t t = {
         .length = 24,
-        .tx_buffer = data,
-        .flags = SPI_TRANS_USE_RXDATA,
+        .tx_buffer = tx_data,
+        .rx_buffer = rx_data,
     };
     
     if (spi_device_transmit(touch_spi_handle, &t) != ESP_OK) return 0;
     
-    // Wynik 12-bitowy
-    return ((t.rx_data[1] << 8) | t.rx_data[2]) >> 3;
+    // XPT2046 zwraca 12-bitowy wynik w 24 cyklach.
+    // Dane znajdują się w 2 i 3 bajcie odpowiedzi.
+    return ((rx_data[1] << 8) | rx_data[2]) >> 4;
 }
 
-// Funkcja odczytu dla LVGL
 static void touchpad_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
     if (gpio_get_level(T_IRQ) == 0) {
-        uint16_t x_raw = xpt2046_spi_read(CMD_X_READ);
-        uint16_t y_raw = xpt2046_spi_read(CMD_Y_READ);
+        // ZAMIANA MIEJSCAMI: CMD_Y_READ dla X, CMD_X_READ dla Y
+        uint16_t x_raw = xpt2046_spi_read(CMD_Y_READ); 
+        uint16_t y_raw = xpt2046_spi_read(CMD_X_READ);
 
-        // 1. Najpierw mapujemy surowe dane na zakres 0-320 i 0-240
-        int32_t x = (x_raw - 200) * LCD_WIDTH / (3800 - 200);
-        int32_t y = (y_raw - 200) * LCD_HEIGHT / (3800 - 200);
+        // Twoje zaobserwowane zakresy:
+        // X_raw w rogach: ok. 150 (prawy) do 1880 (lewy)
+        // Y_raw w rogach: ok. 150 (dół) do 1900 (góra)
+        int32_t min_raw = 150;
+        int32_t max_raw = 1900;
 
-        // 2. KOREKTA ORIENTACJI (Landscape 0xE8)
-        // Jeśli lewy górny klik aktywuje prawy dół, musimy odwrócić obie osie:
-        data->point.x = LCD_WIDTH - x;
-        data->point.y = LCD_HEIGHT - y;
+        // Mapowanie:
+        // Dla X: 1880 -> 0 (lewo), 150 -> 320 (prawo)
+        int32_t x = (max_raw - x_raw) * LCD_WIDTH / (max_raw - min_raw);
+        
+        // Dla Y: 1900 -> 0 (góra), 150 -> 240 (dół)
+        int32_t y = (max_raw - y_raw) * LCD_HEIGHT / (max_raw - min_raw);
 
-        // Zabezpieczenie zakresu
+        data->point.x = x;
+        data->point.y = y;
+
+        // Ograniczenia
         if(data->point.x < 0) data->point.x = 0;
         if(data->point.x >= LCD_WIDTH) data->point.x = LCD_WIDTH - 1;
         if(data->point.y < 0) data->point.y = 0;
         if(data->point.y >= LCD_HEIGHT) data->point.y = LCD_HEIGHT - 1;
 
         data->state = LV_INDEV_STATE_PR;
-        
-        // Loguj przeliczone punkty, żebyś widział gdzie LVGL "widzi" palec
-        ESP_LOGI(TAG, "LVGL Point -> X: %d, Y: %d", data->point.x, data->point.y);
+        ESP_LOGI(TAG, "CALIBRATED: X=%d, Y=%d", data->point.x, data->point.y);
     } else {
         data->state = LV_INDEV_STATE_REL;
     }
@@ -58,15 +65,11 @@ static void touchpad_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
 
 void lcd_touch_init(spi_host_device_t host) {
     // 1. Konfiguracja T_IRQ
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << T_IRQ),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = 1,
-    };
-    gpio_config(&io_conf);
+    gpio_reset_pin(T_IRQ);
+    gpio_set_direction(T_IRQ, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(T_IRQ, GPIO_PULLUP_ONLY);
 
     // 2. Konfiguracja SPI dla dotyku
-    // NAPRAWA: Dodano brakującą definicję 'devcfg'
     spi_device_interface_config_t devcfg = {
         .clock_speed_hz = 1 * 1000 * 1000, 
         .mode = 0,
@@ -74,22 +77,14 @@ void lcd_touch_init(spi_host_device_t host) {
         .queue_size = 7,
     };
     
-    esp_err_t ret = spi_bus_add_device(host, &devcfg, &touch_spi_handle);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to add SPI device");
-        return;
-    }
+    ESP_ERROR_CHECK(spi_bus_add_device(host, &devcfg, &touch_spi_handle));
 
-   // 3. Rejestracja w LVGL
+    // 3. Rejestracja w LVGL
     static lv_indev_drv_t indev_drv;
     lv_indev_drv_init(&indev_drv);
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = touchpad_read;
 
-    // NAPRAWA: Zmiana z lv_indev_register na lv_indev_drv_register
-    lv_indev_t * indev = lv_indev_drv_register(&indev_drv);
-
-    if(indev) {
-        ESP_LOGI(TAG, "Touch initialized on CS: %d", T_CS);
-    }
+    lv_indev_drv_register(&indev_drv);
+    ESP_LOGI(TAG, "Touch initialized successfully");
 }

@@ -9,11 +9,9 @@
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 
-// Zawsze najpierw LVGL, potem port
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
 
-// Twoje moduły
 #include "gpio_init.h"
 #include "spi_init.h"
 #include "uart_init.h"
@@ -31,34 +29,45 @@ spi_device_handle_t nrf_handle = NULL;
 SemaphoreHandle_t xSpiMutex = NULL;
 QueueHandle_t xSensorQueue = NULL;
 
-// Czcionka z polskimi znakami
 LV_FONT_DECLARE(montserrat_pl_14);
-// Ikony dla kafelków
-#define MY_SYM_TEMP     "\xEF\x8B\x8B" // Termometr (0xF2CB)
-#define MY_SYM_HUM      "\xEF\x81\x83" // Kropla (0xF043)
-#define MY_SYM_PRESS    "\xEF\x98\xA4" // Ciśnienie (0xF624)
 
-// Ikony dla paska statusu (Bateria)
-#define MY_SYM_BAT_100  "\xEF\x89\x80" // Pełna (0xF240)
-#define MY_SYM_BAT_50   "\xEF\x89\x82" // Połowa (0xF242)
-#define MY_SYM_BAT_0    "\xEF\x89\x84" // Pusta (0xF244)
+#define MY_SYM_TEMP     "\xEF\x8B\x8B" // Termometr
+#define MY_SYM_HUM      "\xEF\x81\x83" // Kropla
+#define MY_SYM_PRESS    "\xEF\x98\xA4" // Ciśnienie
 
-// Globalne wskaźniki na obiekty LVGL (aby móc je aktualizować z innych tasków)
-lv_obj_t * lbl_title;
-lv_obj_t * lbl_temp;
-lv_obj_t * lbl_hum;
-lv_obj_t * lbl_press;
-lv_obj_t * lbl_time;
-lv_obj_t * lbl_date;
-lv_obj_t * icon_wifi;
-lv_obj_t * icon_wifi_err;
-lv_obj_t * icon_battery;
+#define MY_SYM_BAT_100  "\xEF\x89\x80" // Pełna bateria
+#define MY_SYM_BAT_50   "\xEF\x89\x82" // Połowa
+#define MY_SYM_BAT_0    "\xEF\x89\x84" // Pusta
 
+// Obiekty LVGL
+static lv_obj_t * main_screen = NULL;
+static lv_obj_t * settings_screen = NULL;
+static lv_obj_t * wifi_screen = NULL;
+static lv_obj_t * btn_wifi_list[10]; // Tablica przycisków sieci
+static lv_obj_t * wifi_list_cont = NULL;
+static lv_obj_t * btn_refresh_ptr = NULL;
+static lv_obj_t * scan_spinner_ptr = NULL; // <--- DODAJ TO
+static bool is_scanning = false; // <--- DODAJ TĘ FLAGĘ
+
+lv_obj_t *lbl_temp, *lbl_hum, *lbl_press, *lbl_time, *lbl_date, *icon_wifi, *icon_wifi_err, *icon_battery;
 bool is_wifi_connecting = false;
 
-static void set_obj_opa(void * obj, int32_t v);
+// Prototypy funkcji (aby uniknąć ostrzeżeń kompilatora)
+void create_weather_ui(void);
+void create_settings_ui(void);
+void create_wifi_settings_ui(void);
+void create_status_bar(lv_obj_t * scr);
+void create_menu_button(lv_obj_t * scr);
+static void btn_event_cb(lv_event_t * e);
+static void wifi_settings(lv_event_t * e);
+static void back_to_settings_cb(lv_event_t * e);
+static void back_event_to_main(lv_event_t * e);
+static void open_password_modal(lv_event_t * e);
+void update_wifi_icon(int8_t rssi, bool connected);
 void start_wifi_blink(void);
-void update_wifi_icon(int8_t rssi, bool connected); // Dopasuj nazwę (icon czy status?)
+static void set_obj_opa(void * obj, int32_t v);
+void refresh_wifi_list(lv_obj_t * list_cont);
+static lv_style_t style_btn;
 
 // --- INICJALIZACJA PODŚWIETLENIA (PWM) ---
 void backlight_pwm_init(void) {
@@ -83,6 +92,18 @@ void backlight_pwm_init(void) {
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
 }
+
+// Funkcja inicjalizująca styl (wywołaj ją raz w app_main lub przed użyciem)
+void init_button_styles(void) {
+    lv_style_init(&style_btn);
+    lv_style_set_radius(&style_btn, 15);
+    lv_style_set_bg_opa(&style_btn, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_btn, lv_palette_lighten(LV_PALETTE_GREY, 3));
+    lv_style_set_border_width(&style_btn, 0);
+    // Tekst ustawiamy wewnątrz przycisku, ale można też w stylu
+}
+
+// --- FUNKCJE DOTYCZĄCE WIFI --- //
 
 void update_wifi_icon(int8_t rssi, bool connected) {
     // Kolor adaptacyjny: biały w nocy, czarny w dzień
@@ -134,6 +155,8 @@ static void set_obj_opa(void * obj, int32_t v) {
     lv_obj_set_style_opa((lv_obj_t *)obj, v, 0);
 }
 
+// ----- FUNKCJA ŁĄCZĄCA Z SIECIĄ WIFI (ZARZĄDZANIE ZDARZENIAMI) --- //
+
 void start_wifi_blink(void) {
     lv_anim_t a;
     lv_anim_init(&a);
@@ -146,15 +169,319 @@ void start_wifi_blink(void) {
     lv_anim_start(&a);
 }
 
-// --- OBSŁUGA ZDARZEŃ (np. kliknięcie przycisku) ---
+// --- ODŚWIEŻANIE LISTY SIECI (np. po ponownym skanowaniu) --- //
+
+void refresh_wifi_list(lv_obj_t * list_cont) {
+    // 1. CZYSZCZENIE LISTY (Tylko tutaj jest to w 100% bezpieczne)
+
+    if (wifi_count == 0) {
+        lv_obj_t * lbl = lv_label_create(list_cont);
+        lv_label_set_text(lbl, "Nie znaleziono sieci.");
+        return;
+    }
+
+    wifi_ap_record_t current_ap;
+    bool is_connected = (esp_wifi_sta_get_ap_info(&current_ap) == ESP_OK);
+
+    for(int i = 0; i < wifi_count; i++) {
+        bool is_duplicate = false;
+        for(int j = 0; j < i; j++) {
+            // ZABEZPIECZENIE: strncmp czyta tylko max 32 bajty
+            if(strncmp((char *)wifi_list[i].ssid, (char *)wifi_list[j].ssid, 32) == 0) {
+                is_duplicate = true;
+                break;
+            }
+        }
+        if(is_duplicate) continue; 
+
+        lv_obj_t * btn = lv_btn_create(list_cont);
+        lv_obj_set_size(btn, 280, 40);
+        lv_obj_add_style(btn, &style_btn, 0); 
+        
+        lv_obj_t * l = lv_label_create(btn);
+        
+        lv_obj_t * icon_l = lv_label_create(btn);
+        lv_obj_set_style_text_font(icon_l, &montserrat_pl_14, 0);
+        lv_obj_align(icon_l, LV_ALIGN_RIGHT_MID, -10, 0); 
+        
+        // ZABEZPIECZENIE: strncmp zamiast strcmp
+        bool is_this_net_connected = (is_connected && strncmp((char *)wifi_list[i].ssid, (char *)current_ap.ssid, 32) == 0);
+        
+        if (is_this_net_connected) {
+            lv_obj_set_style_bg_color(btn, lv_palette_main(LV_PALETTE_BLUE), 0);
+            
+            // ZABEZPIECZENIE: %.32s wymusza ograniczenie znaków
+            lv_label_set_text_fmt(l, "%.32s", (char *)wifi_list[i].ssid); 
+            
+            lv_obj_set_style_text_color(l, lv_color_white(), 0); 
+            lv_obj_set_style_text_color(icon_l, lv_color_white(), 0);
+            lv_label_set_text(icon_l, LV_SYMBOL_WIFI); 
+        } else {
+            // ZABEZPIECZENIE: %.32s wymusza ograniczenie znaków
+            lv_label_set_text_fmt(l, "%.32s", (char *)wifi_list[i].ssid);
+            lv_obj_set_style_text_color(l, lv_color_hex(0x000000), 0);
+            
+            lv_label_set_text(icon_l, LV_SYMBOL_WIFI); 
+            int8_t rssi = wifi_list[i].rssi;
+            
+            if (rssi > -55) {
+                lv_obj_set_style_text_color(icon_l, lv_color_hex(0x000000), 0);
+            } else if (rssi > -75) {
+                lv_obj_set_style_text_color(icon_l, lv_palette_main(LV_PALETTE_GREY), 0);
+            } else {
+                lv_obj_set_style_text_color(icon_l, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
+            }
+        }
+        
+        lv_obj_add_event_cb(btn, open_password_modal, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_update_layout(list_cont);
+}
+
+
+
+// --- TASK DO SKANOWANIA SIECI (WYWOŁYWANY PO KLIKNIĘCIU "USTAWIENIA WIFI") --- //
+
+void wifi_scan_task(void *pvParameters) {
+    wifi_scan_networks(); // Blokujące skanowanie
+
+    lvgl_port_lock(-1);
+    
+    // ZABEZPIECZENIE: Sprawdzamy czy lista w ogóle istnieje w pamięci
+    if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
+        refresh_wifi_list(wifi_list_cont);
+    }
+    
+    // UKRYJ spinner, POKAŻ przycisk
+    if (scan_spinner_ptr != NULL && lv_obj_is_valid(scan_spinner_ptr)) {
+        lv_obj_add_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (btn_refresh_ptr != NULL && lv_obj_is_valid(btn_refresh_ptr)) {
+        lv_obj_clear_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN); 
+    }
+    
+    lvgl_port_unlock();
+
+    is_scanning = false; // Zdejmij blokadę
+    vTaskDelete(NULL);
+}
+
+// --- ZDARZENIE PO KLIKNIĘCIU PRZYCISKU USTAWIEŃ WIFI --- //
+
+static void wifi_refresh_event_cb(lv_event_t * e) {
+    if (is_scanning) return; 
+    is_scanning = true; 
+    
+    lvgl_port_lock(-1);
+    if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
+    if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
+
+    // TUTA JEST BEZPIECZNE CZYSZCZENIE (Wątek GUI usuwa stare sieci z ekranu)
+    if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
+        lv_obj_clean(wifi_list_cont);
+    }
+    lvgl_port_unlock();
+
+    xTaskCreate(wifi_scan_task, "WIFI_SCAN", 8192, NULL, 5, NULL);
+}
+
+// --- TWORZENIE PRZYCISKU MENU (FUNKCJA POMOCNICZA) --- //
+
+static lv_obj_t * create_menu_btn(lv_obj_t * parent, const char * text, lv_style_t * style) {
+    lv_obj_t * btn = lv_btn_create(parent);
+    lv_obj_set_size(btn, 280, 35); 
+    lv_obj_add_style(btn, style, 0); // Dodajemy nasz jasnoszary styl
+    
+    lv_obj_t * l = lv_label_create(btn);
+    lv_label_set_text(l, text);
+    lv_obj_set_style_text_font(l, &montserrat_pl_14, 0);
+    
+    // Wymuszenie czarnego koloru tekstu
+    lv_obj_set_style_text_color(l, lv_color_hex(0x000000), LV_STATE_DEFAULT);
+    
+    lv_obj_center(l);
+    return btn;
+}
+
+// --- OBSŁUGA ZDARZEŃ (np. kliknięcie przycisku) --- //
 
 static void btn_event_cb(lv_event_t * e) {
-    lv_event_code_t code = lv_event_get_code(e);
-    if(code == LV_EVENT_CLICKED) {
-        ESP_LOGI("BUTTON", "Kliknieto Przycisk!");
-        // Wizualny test: zmień kolor tła ekranu na chwilę
-        lv_obj_set_style_bg_color(lv_scr_act(), lv_palette_main(LV_PALETTE_ORANGE), 0);
+    lvgl_port_lock(-1);
+    lv_scr_load(settings_screen);
+    lvgl_port_unlock();
+}
+
+static void back_event_to_main(lv_event_t * e) {
+    lvgl_port_lock(-1);
+    lv_scr_load(main_screen);
+    lvgl_port_unlock();
+}
+
+// Zdarzenie po kliknięciu przycisku sieci (na razie tylko loguje)
+static void open_password_modal(lv_event_t * e) {
+    ESP_LOGI(TAG, "Otwieranie okna hasła...");
+}
+
+// Zdarzenie powrotu do ekranu ustawień
+static void back_to_settings_cb(lv_event_t * e) {
+    lvgl_port_lock(-1);
+    lv_scr_load(settings_screen);
+    lvgl_port_unlock();
+}
+
+// --- ZDARZENIE PO KLIKNIĘCIU PRZYCISKU USTAWIEŃ WIFI --- //
+
+static void wifi_settings(lv_event_t * e) {
+    lvgl_port_lock(-1);
+    create_wifi_settings_ui();
+    lv_scr_load(wifi_screen);
+    lvgl_port_unlock();
+
+    if (is_scanning) {
+        lvgl_port_lock(-1);
+        if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
+        if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
+        lvgl_port_unlock();
+        return; 
     }
+    
+    is_scanning = true;
+
+    lvgl_port_lock(-1);
+    if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
+    if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
+
+    // TUTA JEST BEZPIECZNE CZYSZCZENIE (Wątek GUI usuwa stare sieci z ekranu)
+    if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
+        lv_obj_clean(wifi_list_cont);
+    }
+    lvgl_port_unlock();
+
+    xTaskCreate(wifi_scan_task, "WIFI_SCAN", 8192, NULL, 5, NULL);
+}
+
+// 3. Gdy połączysz się z WiFi:
+void set_wifi_connected(int index) {
+    lvgl_port_lock(-1);
+    lv_obj_set_style_bg_color(btn_wifi_list[index], lv_palette_main(LV_PALETTE_BLUE), 0);
+    // ... dodaj label "Połączono" ...
+    lvgl_port_unlock();
+}
+
+
+// --- TWORZENIE EKRANU WYBORU SIECI WIFI --- //
+
+void create_wifi_settings_ui(void) {
+    if (wifi_screen != NULL) {
+        lv_scr_load(wifi_screen);
+        return;
+    }
+    
+    wifi_screen = lv_obj_create(NULL);
+    
+    // Tytuł
+    lv_obj_t * lbl = lv_label_create(wifi_screen);
+    lv_label_set_text(lbl, "WIFI: WYBIERZ SIEĆ");
+    lv_obj_set_style_text_font(lbl, &montserrat_pl_14, 0);
+    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Przycisk odświeżania (JEDYNY, w prawym górnym rogu)
+    // ... (Tytuł ekranu) ...
+
+    // Przycisk odświeżania
+    btn_refresh_ptr = lv_btn_create(wifi_screen); 
+    lv_obj_set_size(btn_refresh_ptr, 35, 35);
+    lv_obj_align(btn_refresh_ptr, LV_ALIGN_TOP_RIGHT, -10, 10);
+    lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_PRESS_LOCK);
+    lv_obj_set_style_pad_all(btn_refresh_ptr, 0, LV_STATE_PRESSED);
+    lv_obj_add_event_cb(btn_refresh_ptr, wifi_refresh_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * lbl_refresh = lv_label_create(btn_refresh_ptr);
+    lv_label_set_text(lbl_refresh, LV_SYMBOL_REFRESH);
+    lv_obj_center(lbl_refresh);
+
+    // --- NOWE: STWÓRZ SPINNERA RAZ I GO UKRYJ ---
+    scan_spinner_ptr = lv_spinner_create(wifi_screen, 1000, 60);
+    lv_obj_set_size(scan_spinner_ptr, 35, 35);
+    lv_obj_align(scan_spinner_ptr, LV_ALIGN_TOP_RIGHT, -10, 10);
+    lv_obj_add_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN); // Domyślnie ukryty
+
+// ... (reszta kodu, czyli wifi_list_cont) ...
+
+    // Kontener listy
+    wifi_list_cont = lv_obj_create(wifi_screen);
+    lv_obj_set_size(wifi_list_cont, 300, 150);
+    lv_obj_align(wifi_list_cont, LV_ALIGN_TOP_MID, 0, 50); // Trochę niżej, żeby nie nachodziło na przycisk
+    lv_obj_set_flex_flow(wifi_list_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(wifi_list_cont, 10, 0);
+    lv_obj_add_flag(wifi_list_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(wifi_list_cont, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_set_scroll_dir(wifi_list_cont, LV_DIR_VER);
+
+    // Przycisk POWRÓT
+    lv_obj_t * btn_back = lv_btn_create(wifi_screen);
+    lv_obj_set_size(btn_back, 80, 30);
+    lv_obj_align(btn_back, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    lv_obj_add_event_cb(btn_back, back_to_settings_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * lbl_back = lv_label_create(btn_back);
+    lv_label_set_text(lbl_back, "WRÓĆ");
+    lv_obj_set_style_text_font(lbl_back, &montserrat_pl_14, 0);
+    lv_obj_center(lbl_back);
+    
+    lv_scr_load(wifi_screen);
+}
+
+// --- TWORZENIE EKRANU USTAWIEŃ --- //
+
+void create_settings_ui(void) {
+    if (settings_screen != NULL) return; // Zapobiega tworzeniu kopii
+        
+    settings_screen = lv_obj_create(NULL);
+
+    lv_obj_t * title = lv_label_create(settings_screen);
+    lv_label_set_text(title, "USTAWIENIA");
+    lv_obj_set_style_text_font(title, &montserrat_pl_14, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 5);
+
+    lv_obj_t * menu_cont = lv_obj_create(settings_screen);
+    lv_obj_set_size(menu_cont, 300, 160);
+    lv_obj_align(menu_cont, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_set_flex_flow(menu_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(menu_cont, 10, 0); 
+    lv_obj_add_flag(menu_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(menu_cont, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_set_scroll_dir(menu_cont, LV_DIR_VER);
+
+    // Definicja stylu dla przycisków w menu
+    static lv_style_t style_btn;
+    lv_style_init(&style_btn);
+    lv_style_set_radius(&style_btn, 15);
+    lv_style_set_bg_opa(&style_btn, LV_OPA_COVER);
+    lv_style_set_bg_color(&style_btn, lv_palette_lighten(LV_PALETTE_GREY, 3)); // Twój jasnoszary
+    lv_style_set_border_width(&style_btn, 0);
+
+    // Tworzenie przycisków (wszystkie używają jednego stylu)
+    lv_obj_t * btn_wifi = create_menu_btn(menu_cont, "Ustawienia WiFi", &style_btn);
+    lv_obj_add_event_cb(btn_wifi, wifi_settings, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * btn_date = create_menu_btn(menu_cont, "Data i Czas", &style_btn);
+    // lv_obj_add_event_cb(btn_date, date_time_settings, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * btn_bright = create_menu_btn(menu_cont, "Ustawienia Jasności", &style_btn);
+    
+    lv_obj_t * btn_reset = create_menu_btn(menu_cont, "Reset do Ustawień Fabrycznych", &style_btn);
+
+    // Przycisk powrotu
+    lv_obj_t * btn_back = lv_btn_create(settings_screen);
+    lv_obj_set_size(btn_back, 80, 30);
+    lv_obj_align(btn_back, LV_ALIGN_TOP_LEFT, 10, 5);
+    lv_obj_add_event_cb(btn_back, back_event_to_main, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * lbl_back = lv_label_create(btn_back);
+    lv_label_set_text(lbl_back, "WRÓĆ");
+    lv_obj_set_style_text_font(lbl_back, &montserrat_pl_14, 0);
+    lv_obj_center(lbl_back);
 }
 
 // --- TWORZENIE PASKA STATUSU (Czas + WiFi) ---
@@ -257,6 +584,7 @@ void create_menu_button(lv_obj_t * scr) {
 void create_weather_ui(void) {
     lvgl_port_lock(-1); 
 
+    main_screen = lv_scr_act();
     lv_obj_t * scr = lv_scr_act();
 
     // 1. Kontener na kafelki (Flexbox) - rządek
@@ -476,16 +804,19 @@ void night_mode_task(void *pvParameters) {
 
                 ESP_LOGI(TAG, "Przelaczanie na tryb: %s", is_night ? "NOCNY" : "DZIENNY");
 
-                // 1. Zmiana motywu LVGL
-                lv_obj_report_style_change(NULL);
-                lvgl_port_lock(-1); // POPRAWKA 2
+                // --- POPRAWKA: LOCK MUSI BYĆ PRZED ZMIANĄ STYLU! ---
+                lvgl_port_lock(-1); 
+                
+                lv_obj_report_style_change(NULL); // Teraz jest to w 100% bezpieczne
+                
                 lv_disp_t * disp = lv_disp_get_default();
                 lv_theme_t * th = lv_theme_default_init(disp,
-                    lv_palette_main(LV_PALETTE_BLUE), // Kolor akcentów 1
-                    lv_palette_main(LV_PALETTE_RED),  // Kolor akcentów 2
-                    is_night,                         // TRUE = tryb ciemny
+                    lv_palette_main(LV_PALETTE_BLUE),
+                    lv_palette_main(LV_PALETTE_RED), 
+                    is_night,                        
                     LV_FONT_DEFAULT);
                 lv_disp_set_theme(disp, th);
+                
                 lvgl_port_unlock();
 
                 // 2. Ściemnianie/Rozjaśnianie podświetlenia
@@ -521,12 +852,18 @@ void app_main(void) {
     lcd_touch_init(VSPI_HOST);
 
     // 2. Rysowanie początkowego interfejsu
+    init_button_styles(); // Inicjalizacja stylów przycisków
     create_weather_ui();
+    lvgl_port_lock(-1);
+    create_settings_ui();
+    create_wifi_settings_ui();
+    lv_scr_load(main_screen); // Ustawienie ekranu głównego jako aktywnego
+    lvgl_port_unlock();
     
     // 3. Startowanie zadań FreeRTOS
     xTaskCreate(nrf_receiver_task, "NRF_TASK", 4096, NULL, 4, NULL);
     xTaskCreate(collect_time_task, "TIME_TASK", 8192, NULL, 4, NULL); 
-    xTaskCreate(update_ui_task, "GUI_UPDATE_TASK", 4096, NULL, 5, NULL);
+    xTaskCreate(update_ui_task, "GUI_UPDATE_TASK", 8192, NULL, 5, NULL);
     xTaskCreate(night_mode_task, "NIGHT_MODE_TASK", 4096, NULL, 5, NULL);
 
     ESP_LOGI(TAG, "System dziala!");

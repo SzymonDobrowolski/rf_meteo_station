@@ -23,6 +23,9 @@ static int s_retry_num = 0;
 // --- OBSŁUGA ZDARZEŃ (TO JEST "MÓZG" WIFI) ---
 // W wifi_project.c
 
+wifi_ap_record_t wifi_list[10]; // Tablica do przechowywania wyników skanowania
+uint16_t wifi_count = 0; // Zmienna globalna do przechowywania liczby znalezionych sieci
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -121,4 +124,30 @@ bool wifi_connect_station(const char *ssid, const char *password)
         ESP_LOGE(TAG, "Nieoczekiwane zdarzenie");
         return false;
     }
+}
+
+void wifi_scan_networks(void) {
+    wifi_scan_config_t scan_config = {
+        .ssid = 0,
+        .bssid = 0,
+        .channel = 0,
+        .show_hidden = false
+    };
+
+    ESP_LOGI("WIFI", "Rozpoczynam skanowanie...");
+    
+    // Uruchomienie skanowania (true = blokujące, czeka na zakończenie)
+    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+
+    // Ograniczamy liczbę pobieranych wyników do rozmiaru naszej tablicy (10)
+    uint16_t number = 10;
+    
+    // ESP-IDF wpisuje zeskanowane sieci BEZPOŚREDNIO do naszej tablicy wifi_list!
+    // Nie musimy robić żadnych pętli ani snprintf.
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, wifi_list));
+    
+    // Zapisujemy, ile faktycznie sieci znalazł (od 0 do 10)
+    wifi_count = number;
+
+    ESP_LOGI("WIFI", "Znaleziono %d sieci", wifi_count);
 }

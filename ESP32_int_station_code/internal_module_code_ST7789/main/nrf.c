@@ -30,7 +30,7 @@ void nrf_write_register(spi_device_handle_t spi, uint8_t reg, uint8_t data)
     trans.tx_buffer = tx; 
     trans.rx_buffer = NULL;     
 
-    spi_device_polling_transmit(spi, &trans);
+    spi_device_transmit(spi, &trans);
     free(tx);
 }
 
@@ -48,7 +48,7 @@ void nrf_write_buf(spi_device_handle_t spi, uint8_t reg, const uint8_t *data, ui
     trans.tx_buffer = tx;
     trans.rx_buffer = NULL;
 
-    spi_device_polling_transmit(spi, &trans);
+    spi_device_transmit(spi, &trans);
     free(tx);
 }
 
@@ -72,7 +72,7 @@ uint8_t nrf_read_register(spi_device_handle_t spi, uint8_t reg)
     trans.tx_buffer = tx;  
     trans.rx_buffer = rx;  
 
-    spi_device_polling_transmit(spi, &trans);
+    spi_device_transmit(spi, &trans);
     
     uint8_t result = rx[1];
     free(tx);
@@ -100,7 +100,7 @@ void nrf_read_buf(spi_device_handle_t spi, uint8_t cmd, uint8_t *buffer, uint8_t
     trans.tx_buffer = tx;
     trans.rx_buffer = rx;
 
-    spi_device_polling_transmit(spi, &trans);
+    spi_device_transmit(spi, &trans);
 
     memcpy(buffer, &rx[1], len);
 
