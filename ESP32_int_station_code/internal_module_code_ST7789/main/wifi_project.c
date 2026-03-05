@@ -8,125 +8,137 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_project.h"
+
 extern bool is_wifi_connecting;
 
 static const char *TAG = "WIFI_MODULE";
 
-// Grupa zdarzeń do synchronizacji (żebyśmy mogli poczekać na połączenie)
-static EventGroupHandle_t s_wifi_event_group;
+static EventGroupHandle_t s_wifi_event_group = NULL;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
 static int s_retry_num = 0;
 #define MAX_RETRY 5
 
-// --- OBSŁUGA ZDARZEŃ (TO JEST "MÓZG" WIFI) ---
-// W wifi_project.c
+static bool is_wifi_initialized = false;
+static bool s_is_switching_network = false;
 
-wifi_ap_record_t wifi_list[10]; // Tablica do przechowywania wyników skanowania
-uint16_t wifi_count = 0; // Zmienna globalna do przechowywania liczby znalezionych sieci
+wifi_ap_record_t wifi_list[10]; 
+uint16_t wifi_count = 0; 
 
-static void wifi_event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data) {
+// --- HANDLER ZDARZEŃ ---
+static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        is_wifi_connecting = true; 
-        esp_wifi_connect();
+        // TUTAJ BYŁ BŁĄD! Usunąłem automatyczne esp_wifi_connect().
+        // Nic tu nie robimy, łączymy się świadomie wywołując funkcję na końcu.
+        ESP_LOGI(TAG, "Radio WiFi wystartowalo. Czekam na komendy...");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        
+        if (s_is_switching_network) {
+            ESP_LOGI(TAG, "Celowe rozlaczenie - wstrzymuje auto-reconnect.");
+            return;
+        }
+        
         if (s_retry_num < MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            is_wifi_connecting = true;
-            ESP_LOGI(TAG, "Ponawianie proby polaczenia...");
+            is_wifi_connecting = true; 
+            ESP_LOGI(TAG, "Ponawianie proby polaczenia (%d/%d)...", s_retry_num, MAX_RETRY);
         } else {
-            is_wifi_connecting = false;
-            // DODAJ TO: Informujemy funkcje wifi_connect_station o bledzie
+            is_wifi_connecting = false; 
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            ESP_LOGW(TAG, "Przekroczono limit prob polaczenia! Wyswietlam blad na ekranie.");
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        is_wifi_connecting = false; 
         s_retry_num = 0;
-        // DODAJ TO: Informujemy funkcje wifi_connect_station o sukcesie
+        is_wifi_connecting = false; 
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
+// --- INICJALIZACJA BAZOWA ---
+static void ensure_wifi_initialized(void) {
+    if (is_wifi_initialized) return;
 
-bool wifi_connect_station(const char *ssid, const char *password)
-{
-    is_wifi_connecting = true; // Ustawiamy flagę, że zaczynamy łączyć się
-
-    // 1. Tworzymy grupę zdarzeń
     s_wifi_event_group = xEventGroupCreate();
-
-    // 2. Inicjalizacja warstwy sieciowej (Netif)
     ESP_ERROR_CHECK(esp_netif_init());
-
-    // 3. Tworzymy domyślną pętlę zdarzeń systemowych
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
 
-    // 4. Domyślna konfiguracja WiFi
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    // 5. Rejestracja funkcji 'event_handler' do nasłuchiwania zdarzeń
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &wifi_event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &wifi_event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
+    esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL);
+    esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL);
 
-    // 6. Ustawienie SSID i Hasła
-    wifi_config_t wifi_config = {
-        .sta = {
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK, // Wymagane WPA2 (bezpieczeństwo)
-            .pmf_cfg = {
-                .capable = true,
-                .required = false
-            },
-        },
-    };
-    // Kopiujemy bezpiecznie stringi do struktury (bo struktura ma tablice o stałej długości)
-    strlcpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-    strlcpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
 
-    // 7. Wgranie konfiguracji
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) ); // Tryb Station (Klient)
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
+    is_wifi_initialized = true;
+    ESP_LOGI(TAG, "Modul WiFi poprawnie zainicjowany.");
+}
+
+// --- ŁĄCZENIE Z SIECIĄ ---
+bool wifi_connect_station(const char *ssid, const char *password) {
+    ensure_wifi_initialized(); 
+
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    s_is_switching_network = true; 
     
-    // 8. START!
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    ESP_LOGI(TAG, "Oczekiwanie na polaczenie...");
-
-    // 9. Czekanie na wynik (blokujemy program w tym miejscu aż dostaniemy IP lub Błąd)
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
-
-    // 10. Analiza wyniku
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Polaczono z SSID: %s", ssid);
-        return true;
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Blad polaczenia z SSID: %s", ssid);
-        return false;
+    // Bezpiecznie rozłączamy starą sieć
+    esp_wifi_disconnect(); 
+    vTaskDelay(pdMS_TO_TICKS(100)); // Dać mu 100ms na ogarnięcie rozłączenia
+    
+    wifi_config_t wifi_config = {0};
+    strncpy((char*)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char*)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
+    
+    // Ustawienia kompatybilności dla nowych ruterów i hotspotów
+    wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    if (strlen(password) > 0) {
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
     } else {
-        ESP_LOGE(TAG, "Nieoczekiwane zdarzenie");
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    }
+    wifi_config.sta.pmf_cfg.capable = true;
+    wifi_config.sta.pmf_cfg.required = false;
+
+    // MECHANIZM AWARYJNY: Jeśli próba wgrania konfigu zgłosi błąd stanu, używamy spadochronu (stop/start)
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Ostrzezenie: sterownik byl zajety (%s). Wymuszam twardy reset radia...", esp_err_to_name(err));
+        esp_wifi_stop();
+        esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+        esp_wifi_start();
+    }
+    
+    s_is_switching_network = false;
+    s_retry_num = 0;
+    
+    // Startujemy łączenie ręcznie!
+    esp_err_t conn_err = esp_wifi_connect();
+    if (conn_err != ESP_OK) {
+        ESP_LOGE(TAG, "Ostrzezenie przy wywolaniu connect: %s", esp_err_to_name(conn_err));
+    }
+
+    ESP_LOGI(TAG, "Oczekiwanie na polaczenie z %s...", ssid);
+
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Sukces! Posiadamy IP.");
+        return true;
+    } else {
+        ESP_LOGW(TAG, "Nie udalo sie polaczyc z %s", ssid);
         return false;
     }
 }
 
+// --- SKANOWANIE SIECI ---
 void wifi_scan_networks(void) {
+    ensure_wifi_initialized(); 
+
     wifi_scan_config_t scan_config = {
         .ssid = 0,
         .bssid = 0,
@@ -134,20 +146,48 @@ void wifi_scan_networks(void) {
         .show_hidden = false
     };
 
-    ESP_LOGI("WIFI", "Rozpoczynam skanowanie...");
+    ESP_LOGI(TAG, "Rozpoczynam skanowanie...");
     
-    // Uruchomienie skanowania (true = blokujące, czeka na zakończenie)
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
+    bool resume_connection = false; // <-- Flaga pamiętająca o wznowieniu
+    
+    esp_err_t err = esp_wifi_scan_start(&scan_config, true);
+    
+    // Jeśli sterownik odrzucił skanowanie bo jest w trakcie łączenia
+    if (err == ESP_ERR_WIFI_STATE) {
+        ESP_LOGW(TAG, "Skanowanie zablokowane. Wymuszam rozlaczenie na czas skanu...");
+        
+        s_is_switching_network = true; 
+        esp_wifi_disconnect();         
+        vTaskDelay(pdMS_TO_TICKS(100)); 
+        
+        err = esp_wifi_scan_start(&scan_config, true);
+        
+        s_is_switching_network = false; 
+        resume_connection = true; // Zaznaczamy: "Na końcu musisz wznowić połączenie!"
+    }
 
-    // Ograniczamy liczbę pobieranych wyników do rozmiaru naszej tablicy (10)
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Nie udalo sie wykonac skanowania: %s", esp_err_to_name(err));
+        wifi_count = 0;
+        if (resume_connection) esp_wifi_connect(); // Wznawiamy nawet w razie błędu skanera
+        return;
+    }
+
     uint16_t number = 10;
     
-    // ESP-IDF wpisuje zeskanowane sieci BEZPOŚREDNIO do naszej tablicy wifi_list!
-    // Nie musimy robić żadnych pętli ani snprintf.
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, wifi_list));
-    
-    // Zapisujemy, ile faktycznie sieci znalazł (od 0 do 10)
-    wifi_count = number;
+    // 1. NAJPIERW POBIERAMY ZESKANOWANE SIECI Z BUFORA
+    err = esp_wifi_scan_get_ap_records(&number, wifi_list);
+    if (err == ESP_OK) {
+        wifi_count = number;
+        ESP_LOGI(TAG, "Znaleziono %d sieci", wifi_count);
+    } else {
+        ESP_LOGE(TAG, "Blad pobierania wynikow skanowania: %s", esp_err_to_name(err));
+        wifi_count = 0;
+    }
 
-    ESP_LOGI("WIFI", "Znaleziono %d sieci", wifi_count);
+    // 2. DOPIERO TERAZ, KIEDY WYNIKI SĄ BEZPIECZNE, WZNAWIAMY ŁĄCZENIE
+    if (resume_connection) {
+        ESP_LOGI(TAG, "Skanowanie zakonczone. Wznawiam przerwane polaczenie...");
+        esp_wifi_connect();
+    }
 }
