@@ -1,7 +1,7 @@
 #include <avr/io.h>
 #define F_CPU 20000000UL // 20 MHz
 
-#define SLEEP_SCALER RTC_PERIOD_CYC4096_gc
+#define SLEEP_SCALER RTC_PERIOD_CYC8192_gc //Co 8 sekund sygnał 
 /* inne dzielniki czasu uspania:
     RTC_PERIOD_CYC1024_gc  = 1 sekunda
     RTC_PERIOD_CYC4096_gc  = 4 sekundy
@@ -42,8 +42,9 @@ blink_led(3, 100); //sygnalizacja wysłania danych w pliku main.cpp
 
 #define BME280_ADDR 0x76 //lub 0x77 zaleznie od plytki
 
-typedef struct __attribute__((packed)) {//to jest struktura 12 bajtowa, nrf może przyjąc 32, dzieki struktorze packet wyslemy cale 12 bajtow za jednym zamachem
+typedef struct __attribute__((packed)) {//to jest struktura 14 bajtowa, nrf może przyjąc 32, dzieki struktorze packet wyslemy cale 12 bajtow za jednym zamachem
     int32_t temp_hundredths;
     uint32_t pressure_pa;
     uint32_t hum_x1024;
+    uint16_t vcc_mv; // napięcie baterii w mV
 } sensor_packet_t; //musi być taka sama na odbiorniku (ESP32)
