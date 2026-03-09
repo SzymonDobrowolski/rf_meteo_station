@@ -1,2 +1,2 @@
-idf_component_register(SRCS "touch.c" "sntp.c" "main.c" "gpio_init.c" "uart_init.c" "spi_init.c" "nrf.c" "wifi_project.c" "nrf.c" "lcd.c" "montserrat_pl_14.c"
-                    INCLUDE_DIRS "." REQUIRES ili9340 driver spiffs nvs_flash esp_wifi esp_netif driver spi_flash)
+idf_component_register(SRCS "main.c" "gpio_init.c" "spi_init.c" "nrf.c" "wifi_project.c" "lcd.c" "touch.c" "sntp.c" "weather_icons.c" "montserrat_pl_14.c" "put_logo.c"
+                    INCLUDE_DIRS "." REQUIRES ili9340 driver spiffs nvs_flash esp_wifi esp_netif driver spi_flash lvgl esp_timer nvs_flash esp_wifi esp_http_client json)

@@ -9,6 +9,8 @@
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include <sys/time.h>
+#include "esp_http_client.h"
+#include "cJSON.h"
 
 #include "nvs.h"
 
@@ -17,7 +19,6 @@
 
 #include "gpio_init.h"
 #include "spi_init.h"
-#include "uart_init.h"
 #include "nrf.h"
 #include "wifi_project.h"
 #include "sntp.h"
@@ -33,6 +34,8 @@ SemaphoreHandle_t xSpiMutex = NULL;
 QueueHandle_t xSensorQueue = NULL;
 
 LV_FONT_DECLARE(montserrat_pl_14);
+LV_FONT_DECLARE(weather_icons);
+LV_IMG_DECLARE(put_logo);
 
 #define MY_SYM_TEMP     "\xEF\x8B\x8B" // Termometr
 #define MY_SYM_HUM      "\xEF\x81\x83" // Kropla
@@ -42,18 +45,42 @@ LV_FONT_DECLARE(montserrat_pl_14);
 #define MY_SYM_BAT_50   "\xEF\x89\x82" // Połowa
 #define MY_SYM_BAT_0    "\xEF\x89\x84" // Pusta
 
+// --- IKONY POGODOWE (Dla wygenerowanej czcionki FontAwesome) ---
+#define SYM_W_SUN        "\xEF\x86\x85" // Słońce (f185)
+#define SYM_W_CLOUD      "\xEF\x83\x82" // Chmura (f0c2)
+#define SYM_W_CLOUD_SUN  "\xEF\x9B\x84" // Słońce z chmurą (f6c4)
+#define SYM_W_RAIN       "\xEF\x9D\x80" // Deszcz (f740)
+#define SYM_W_SNOW       "\xEF\x8B\x9C" // Śnieg (f2dc)
+#define SYM_W_STORM      "\xEF\x83\xA7" // Burza (f0e7)
+
 // Obiekty LVGL
 static lv_obj_t * main_screen = NULL;
 static lv_obj_t * settings_screen = NULL;
 static lv_obj_t * weather_info_screen = NULL;
 static lv_obj_t * graph_screen = NULL;
 
+char current_city[64] = "Warszawa"; // Domyślne miasto
+bool force_weather_update = true;   // Flaga wymuszająca natychmiastowe pobranie po wpisaniu
+static lv_obj_t * forecast_day_labels[7];
+static lv_obj_t * forecast_icon_labels[7];
+static lv_obj_t * forecast_temp_labels[7];
+static lv_obj_t * lbl_weather_city = NULL; // 
+
+static lv_obj_t * chart_temp;
+static lv_chart_series_t * ser_temp;
+
+static lv_obj_t * chart_hum;
+static lv_chart_series_t * ser_hum;
+
+static lv_obj_t * chart_press;
+static lv_chart_series_t * ser_press;
+
 static lv_obj_t * wifi_screen = NULL;
 static lv_obj_t * btn_wifi_list[10]; // Tablica przycisków sieci
 static lv_obj_t * wifi_list_cont = NULL;
 static lv_obj_t * btn_refresh_ptr = NULL;
-static lv_obj_t * scan_spinner_ptr = NULL; // <--- DODAJ TO
-static bool is_scanning = false; // <--- DODAJ TĘ FLAGĘ
+static lv_obj_t * scan_spinner_ptr = NULL; // 
+static bool is_scanning = false; // 
 static lv_obj_t * password_modal = NULL;
 static lv_obj_t * ta_password = NULL;
 static lv_obj_t * kb = NULL;
@@ -126,13 +153,14 @@ static void confirm_reset_cb(lv_event_t * e) {
 
 // --- TWORZENIE EKRANU RESETU ---
 void create_reset_ui(void) {
+
     if (reset_settings_screen != NULL) {
         lv_scr_load(reset_settings_screen);
         return;
     }
     
     reset_settings_screen = lv_obj_create(NULL);
-    
+
     // Tytuł
     lv_obj_t * title = lv_label_create(reset_settings_screen);
     lv_label_set_text(title, "UWAGA!");
@@ -167,13 +195,12 @@ void create_reset_ui(void) {
     lv_obj_center(lbl_reset);
 
     lv_scr_load(reset_settings_screen);
+
 }
 
 // Zdarzenie po kliknięciu "Reset do ustawień fabrycznych" w menu
 static void reset_settings_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     create_reset_ui();
-    lvgl_port_unlock();
 }
 
 // --- INICJALIZACJA PODŚWIETLENIA (PWM) ---
@@ -214,8 +241,9 @@ void init_button_styles(void) {
 
 void update_wifi_icon(int8_t rssi, bool connected) {
     // Kolor adaptacyjny: biały w nocy, czarny w dzień
+    
     lv_color_t theme_text_color = lv_obj_get_style_text_color(lv_scr_act(), 0);
-    lvgl_port_lock(-1);
+
     if (connected) {
         lv_anim_del(icon_wifi, set_obj_opa);
         lv_obj_set_style_opa(icon_wifi, LV_OPA_COVER, 0);
@@ -256,7 +284,6 @@ void update_wifi_icon(int8_t rssi, bool connected) {
         lv_obj_set_style_text_color(icon_wifi, lv_palette_main(LV_PALETTE_GREY), 0);
         lv_label_set_text(icon_wifi, LV_SYMBOL_WIFI);
     }
-    lvgl_port_unlock();
 }
 
 static void set_obj_opa(void * obj, int32_t v) {
@@ -266,7 +293,6 @@ static void set_obj_opa(void * obj, int32_t v) {
 // ----- FUNKCJA ŁĄCZĄCA Z SIECIĄ WIFI (ZARZĄDZANIE ZDARZENIAMI) --- //
 
 void start_wifi_blink(void) {
-    lvgl_port_lock(-1);
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, icon_wifi);
@@ -276,7 +302,6 @@ void start_wifi_blink(void) {
     lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_exec_cb(&a, set_obj_opa); // Teraz kompilator już zna set_obj_opa
     lv_anim_start(&a);
-    lvgl_port_unlock();
 }
 
 // --- ODŚWIEŻANIE LISTY SIECI (np. po ponownym skanowaniu) --- //
@@ -348,7 +373,9 @@ void refresh_wifi_list(lv_obj_t * list_cont) {
         
         lv_obj_add_event_cb(btn, open_password_modal, LV_EVENT_CLICKED, (void *)wifi_list[i].ssid);
     }
+
     lv_obj_update_layout(list_cont);
+    
 }
 
 
@@ -359,7 +386,6 @@ void wifi_scan_task(void *pvParameters) {
     wifi_scan_networks(); // Blokujące skanowanie
 
     lvgl_port_lock(-1);
-    
     // ZABEZPIECZENIE: Sprawdzamy czy lista w ogóle istnieje w pamięci
     if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
         refresh_wifi_list(wifi_list_cont);
@@ -372,7 +398,6 @@ void wifi_scan_task(void *pvParameters) {
     if (btn_refresh_ptr != NULL && lv_obj_is_valid(btn_refresh_ptr)) {
         lv_obj_clear_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN); 
     }
-    
     lvgl_port_unlock();
 
     is_scanning = false; // Zdejmij blokadę
@@ -385,7 +410,6 @@ static void wifi_refresh_event_cb(lv_event_t * e) {
     if (is_scanning) return; 
     is_scanning = true; 
     
-    lvgl_port_lock(-1);
     if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
     if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
 
@@ -393,7 +417,6 @@ static void wifi_refresh_event_cb(lv_event_t * e) {
     if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
         lv_obj_clean(wifi_list_cont);
     }
-    lvgl_port_unlock();
 
     xTaskCreate(wifi_scan_task, "WIFI_SCAN", 8192, NULL, 5, NULL);
 }
@@ -418,15 +441,11 @@ static lv_obj_t * create_menu_btn(lv_obj_t * parent, const char * text, lv_style
 
 // --- ŁADOWANIE EKRANU USTAWIEŃ --- //
 static void settings_event_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     lv_scr_load(settings_screen);
-    lvgl_port_unlock();
 }
 
 static void back_event_to_main(lv_event_t * e) {
-    lvgl_port_lock(-1);
     lv_scr_load(main_screen);
-    lvgl_port_unlock();
 }
 
 // --- FUNKCJE DO PAMIĘCI NVS ---
@@ -455,14 +474,12 @@ bool load_wifi_credentials(char * ssid, char * pass, size_t max_len) {
 }
 
 static void close_modal_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     if (password_modal != NULL) {
-        lv_obj_del(password_modal); // Usunięcie tła usuwa też klawiaturę i pole tekstowe
+        lv_obj_del_async(password_modal); // MUSI BYĆ ASYNC!
         password_modal = NULL;
         ta_password = NULL;
         kb = NULL;
     }
-    lvgl_port_unlock();
 }
 
 // Struktura do przekazania danych z modalu do taska
@@ -487,7 +504,6 @@ void wifi_connect_task(void *pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(1500));
 
     lvgl_port_lock(-1);
-    
     if (success) {
         ESP_LOGI(TAG, "Polaczono pomyslnie!");
         save_wifi_credentials(creds->ssid, creds->pass);
@@ -506,49 +522,44 @@ void wifi_connect_task(void *pvParameters) {
     if (btn_refresh_ptr != NULL && lv_obj_is_valid(btn_refresh_ptr)) {
         lv_obj_clear_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN); 
     }
-    
     lvgl_port_unlock();
+    
 
     free(creds);
     vTaskDelete(NULL);
 }
 
 static void connect_btn_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
+    // TARCZA ANTY-CRASHOWA: Zabezpieczenie przed podwójnym klikiem
+    if (ta_password == NULL) return; 
     
-    // 1. Pobieramy wpisane hasło
     const char * pwd = lv_textarea_get_text(ta_password);
     
-    // 2. Kopiujemy dane do struktury, którą wyślemy do taska
     wifi_cred_t *creds = malloc(sizeof(wifi_cred_t));
     snprintf(creds->ssid, sizeof(creds->ssid), "%.32s", selected_ssid);
     snprintf(creds->pass, sizeof(creds->pass), "%.63s", pwd);
 
-    // 3. Zamykamy modal z klawiaturą
     if (password_modal != NULL) {
-        lv_obj_del(password_modal);
+        lv_obj_del_async(password_modal);
         password_modal = NULL;
         ta_password = NULL;
         kb = NULL;
     }
 
-    // 4. Pokazujemy kółko ładowania w prawym górnym rogu ekranu WiFi
     if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
     if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
 
-    lvgl_port_unlock();
-
-    // 5. Odpalamy task łączący
     xTaskCreate(wifi_connect_task, "WIFI_CONN", 8192, creds, 5, NULL);
 }
 
 // Zdarzenie po kliknięciu przycisku sieci (na razie tylko loguje)
 static void open_password_modal(lv_event_t * e) {
     // Pobieramy nazwę sieci przekazaną z przycisku
+
+    if (password_modal != NULL) return;
+
     char * ssid = (char *)lv_event_get_user_data(e);
     snprintf(selected_ssid, sizeof(selected_ssid), "%.32s", ssid);
-
-    lvgl_port_lock(-1);
 
     // 1. Tło modala (Ciemna, półprzezroczysta nakładka na cały ekran)
     password_modal = lv_obj_create(lv_scr_act());
@@ -605,28 +616,27 @@ static void open_password_modal(lv_event_t * e) {
     lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_keyboard_set_textarea(kb, ta_password); // Łączy klawiaturę z polem tekstowym
 
-    lvgl_port_unlock();
 }
 
 // --- ZDARZENIE PO KLIKNIĘCIU PRZYCISKU USTAWIEŃ WIFI --- //
 
 static void wifi_settings(lv_event_t * e) {
-    lvgl_port_lock(-1);
+
+    if (is_wifi_connecting) {
+        ESP_LOGW(TAG, "Blokada: Trwa łączenie z WiFi. Skanowanie niedozwolone.");
+        return; 
+    }
+
     create_wifi_settings_ui();
-    lv_scr_load(wifi_screen);
-    lvgl_port_unlock();
 
     if (is_scanning) {
-        lvgl_port_lock(-1);
         if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
         if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
-        lvgl_port_unlock();
         return; 
     }
     
     is_scanning = true;
 
-    lvgl_port_lock(-1);
     if (btn_refresh_ptr != NULL) lv_obj_add_flag(btn_refresh_ptr, LV_OBJ_FLAG_HIDDEN);
     if (scan_spinner_ptr != NULL) lv_obj_clear_flag(scan_spinner_ptr, LV_OBJ_FLAG_HIDDEN);
 
@@ -634,30 +644,28 @@ static void wifi_settings(lv_event_t * e) {
     if (wifi_list_cont != NULL && lv_obj_is_valid(wifi_list_cont)) {
         lv_obj_clean(wifi_list_cont);
     }
-    lvgl_port_unlock();
 
     xTaskCreate(wifi_scan_task, "WIFI_SCAN", 8192, NULL, 5, NULL);
 }
 
 // 3. Gdy połączysz się z WiFi:
 void set_wifi_connected(int index) {
-    lvgl_port_lock(-1);
     lv_obj_set_style_bg_color(btn_wifi_list[index], lv_palette_main(LV_PALETTE_BLUE), 0);
     // ... dodaj label "Połączono" ...
-    lvgl_port_unlock();
 }
 
 
 // --- TWORZENIE EKRANU WYBORU SIECI WIFI --- //
 
 void create_wifi_settings_ui(void) {
+
     if (wifi_screen != NULL) {
         lv_scr_load(wifi_screen);
         return;
     }
     
     wifi_screen = lv_obj_create(NULL);
-    
+
     // Tytuł
     lv_obj_t * lbl = lv_label_create(wifi_screen);
     lv_label_set_text(lbl, "WIFI: WYBIERZ SIEĆ");
@@ -707,7 +715,7 @@ void create_wifi_settings_ui(void) {
     lv_label_set_text(lbl_back, "WRÓĆ");
     lv_obj_set_style_text_font(lbl_back, &montserrat_pl_14, 0);
     lv_obj_center(lbl_back);
-    
+
     lv_scr_load(wifi_screen);
 }
 
@@ -724,13 +732,11 @@ static void generate_roller_opts(char * buf, int start, int end) {
 
 // Zdarzenie: Zapisz czas i wróć
 static void save_time_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
-    
     // Zbieranie danych z bębnów
     struct tm timeinfo = {0};
     timeinfo.tm_mday = lv_roller_get_selected(roller_day) + 1;
-    timeinfo.tm_mon  = lv_roller_get_selected(roller_month); // Miesiące są od 0 do 11
-    timeinfo.tm_year = lv_roller_get_selected(roller_year) + (2024 - 1900); // Zaczynamy od 2024
+    timeinfo.tm_mon  = lv_roller_get_selected(roller_month); 
+    timeinfo.tm_year = lv_roller_get_selected(roller_year) + (2024 - 1900); 
     timeinfo.tm_hour = lv_roller_get_selected(roller_hour);
     timeinfo.tm_min  = lv_roller_get_selected(roller_minute);
     timeinfo.tm_sec  = 0;
@@ -744,9 +750,8 @@ static void save_time_cb(lv_event_t * e) {
     
     ESP_LOGI(TAG, "Czas zaktualizowany recznie!");
 
-    // Powrót do ustawień
     lv_scr_load(settings_screen);
-    lvgl_port_unlock();
+
 }
 
 // --- TWORZENIE EKRANU USTAWIEŃ CZASU ---
@@ -860,9 +865,7 @@ void create_date_time_ui(void) {
 
 // Zdarzenie odpalane po kliknięciu "Data i Czas" w menu głównym
 static void date_time_settings_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     create_date_time_ui();
-    lvgl_port_unlock();
 }
 
 // --- FUNKCJE NVS DLA JASNOŚCI ---
@@ -900,7 +903,6 @@ static void slider_event_cb(lv_event_t * e) {
 
 // Zdarzenie zapisu jasności
 static void save_bright_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     
     day_brightness = lv_slider_get_value(slider_day);
     night_brightness = lv_slider_get_value(slider_night);
@@ -919,12 +921,11 @@ static void save_bright_cb(lv_event_t * e) {
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
     lv_scr_load(settings_screen);
-    lvgl_port_unlock();
 }
 
 // --- TWORZENIE EKRANU JASNOŚCI ---
 void create_brightness_ui(void) {
-    if (bright_screen != NULL) {
+    if (bright_screen != NULL) { 
         lv_scr_load(bright_screen);
         return;
     }
@@ -988,12 +989,118 @@ void create_brightness_ui(void) {
     lv_obj_center(lbl_save);
 
     lv_scr_load(bright_screen);
+
 }
 
 static void bright_settings_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     create_brightness_ui();
-    lvgl_port_unlock();
+}
+
+void save_location_settings(const char * city) {
+    nvs_handle_t my_handle;
+    if (nvs_open("storage", NVS_READWRITE, &my_handle) == ESP_OK) {
+        nvs_set_str(my_handle, "city", city);
+        nvs_commit(my_handle);
+        nvs_close(my_handle);
+        ESP_LOGI(TAG, "Zapisano nowe miasto do NVS: %s", city);
+    }
+}
+
+void load_location_settings(void) {
+    nvs_handle_t my_handle;
+    if (nvs_open("storage", NVS_READONLY, &my_handle) == ESP_OK) {
+        size_t len = sizeof(current_city);
+        nvs_get_str(my_handle, "city", current_city, &len);
+        nvs_close(my_handle);
+    }
+}
+
+// --- UI: KLAWIATURA LOKALIZACJI ---
+static lv_obj_t * loc_modal = NULL;
+static lv_obj_t * ta_loc = NULL;
+
+static void close_loc_modal_cb(lv_event_t * e) {
+    if (loc_modal != NULL) {
+        lv_obj_del_async(loc_modal); // MUSI BYĆ ASYNC!
+        loc_modal = NULL;
+        ta_loc = NULL;
+    }
+}
+
+static void save_loc_btn_cb(lv_event_t * e) {
+    // TARCZA ANTY-CRASHOWA: Jeśli pole już zniknęło, nie rób nic!
+    if (ta_loc == NULL) return; 
+
+    const char * city = lv_textarea_get_text(ta_loc);
+    snprintf(current_city, sizeof(current_city), "%s", city); 
+    save_location_settings(current_city); 
+    force_weather_update = true; 
+    
+    if (lbl_weather_city != NULL) {
+        lv_label_set_text_fmt(lbl_weather_city, "PROGNOZA POGODY DLA: %s", current_city);
+    }
+
+    if (loc_modal != NULL) {
+        lv_obj_del_async(loc_modal); 
+        loc_modal = NULL;
+        ta_loc = NULL;
+    }
+}
+
+static void location_settings_cb(lv_event_t * e) {
+
+    if (loc_modal != NULL) return;
+    // Tło modala
+    loc_modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(loc_modal, LV_PCT(100), LV_PCT(100));
+    lv_obj_set_style_bg_color(loc_modal, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(loc_modal, LV_OPA_50, 0); 
+    lv_obj_set_style_border_width(loc_modal, 0, 0);
+    lv_obj_set_style_pad_all(loc_modal, 0, 0);
+    lv_obj_add_flag(loc_modal, LV_OBJ_FLAG_CLICKABLE);
+
+    // Panel
+    lv_obj_t * panel = lv_obj_create(loc_modal);
+    lv_obj_set_size(panel, 300, 110);
+    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 5);
+
+    lv_obj_t * lbl_title = lv_label_create(panel);
+    lv_label_set_text(lbl_title, "Wpisz miejscowość:");
+    lv_obj_set_style_text_font(lbl_title, &montserrat_pl_14, 0);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, -5);
+
+    // Pole tekstowe
+    ta_loc = lv_textarea_create(panel);
+    lv_obj_set_size(ta_loc, 260, 40);
+    lv_obj_align(ta_loc, LV_ALIGN_TOP_MID, 0, 20);
+    lv_textarea_set_one_line(ta_loc, true);
+    lv_textarea_set_text(ta_loc, current_city); // Od razu wpisane aktualne miasto
+
+    // Przyciski
+    lv_obj_t * btn_cancel = lv_btn_create(panel);
+    lv_obj_set_size(btn_cancel, 100, 30);
+    lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_LEFT, 10, 5);
+    lv_obj_t * lbl_canc = lv_label_create(btn_cancel);
+    lv_label_set_text(lbl_canc, "Anuluj");
+    lv_obj_center(lbl_canc);
+    lv_obj_add_event_cb(btn_cancel, close_loc_modal_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t * btn_save = lv_btn_create(panel);
+    lv_obj_set_size(btn_save, 100, 30);
+    lv_obj_align(btn_save, LV_ALIGN_BOTTOM_RIGHT, -10, 5);
+    lv_obj_set_style_bg_color(btn_save, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_t * lbl_save = lv_label_create(btn_save);
+    lv_label_set_text(lbl_save, "Zapisz");
+    lv_obj_set_style_text_color(lbl_save, lv_color_white(), 0);
+    lv_obj_center(lbl_save);
+    lv_obj_add_event_cb(btn_save, save_loc_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    // Klawiatura
+    lv_obj_t * kb_city = lv_keyboard_create(loc_modal);
+    lv_obj_set_size(kb_city, 320, 120);
+    lv_obj_align(kb_city, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb_city, ta_loc);
+
 }
 
 // --- TWORZENIE EKRANU USTAWIEŃ --- //
@@ -1038,6 +1145,9 @@ void create_settings_ui(void) {
     lv_obj_t * btn_reset = create_menu_btn(menu_cont, "Reset do Ustawień Fabrycznych", &style_btn);
     lv_obj_add_event_cb(btn_reset, reset_settings_cb, LV_EVENT_CLICKED, NULL);
 
+    lv_obj_t * btn_loc = create_menu_btn(menu_cont, "Lokalizacja Prognozy Pogody", &style_btn);
+    lv_obj_add_event_cb(btn_loc, location_settings_cb, LV_EVENT_CLICKED, NULL);
+
     // Przycisk powrotu
     lv_obj_t * btn_back = lv_btn_create(settings_screen);
     lv_obj_set_size(btn_back, 80, 30);
@@ -1057,7 +1167,6 @@ void create_settings_ui(void) {
 // --- TWORZENIE PASKA STATUSU (Czas + WiFi) ---
 
 void create_status_bar(lv_obj_t * scr) {
-    lvgl_port_lock(-1);
     
     // 1. Główny niewidzialny pasek na samej górze
     lv_obj_t * status_bar = lv_obj_create(scr);
@@ -1104,7 +1213,7 @@ void create_status_bar(lv_obj_t * scr) {
     lv_label_set_text(lbl_time, "00:00:00");
 
     lv_obj_move_foreground(status_bar);
-    lvgl_port_unlock();
+    
 
     // 6. Ikona WiFi
     // Obiekt ikony WiFi wewnątrz status_bar
@@ -1132,6 +1241,7 @@ void create_status_bar(lv_obj_t * scr) {
     lv_label_set_text(icon_battery, MY_SYM_BAT_100); // Domyślnie pełna bateria
     lv_obj_set_style_text_font(icon_battery, &montserrat_pl_14, 0);
     lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_GREY), 0); // Zielony kolor dla pełnej baterii
+
 }
 
 // --- STWORZENIE KAFELKA PRZYCISKU MENU ---
@@ -1152,34 +1262,165 @@ void create_menu_button(lv_obj_t * scr) {
     lv_obj_add_event_cb(btn, settings_event_cb, LV_EVENT_CLICKED, NULL);
 }
 
+// --- FUNKCJA FORMATUJĄCA OŚ X NA GODZINY ---
+static void chart_x_axis_cb(lv_event_t * e) {
+    lv_obj_draw_part_dsc_t * dsc = lv_event_get_draw_part_dsc(e);
+    
+    if(dsc->part == LV_PART_TICKS && dsc->id == LV_CHART_AXIS_PRIMARY_X) {
+        // Mamy 7 głównych kresek (od 0 do 6). 
+        // Mnożymy x4, żeby otrzymać: 00:00, 04:00, 08:00, 12:00...
+        int hour = dsc->value * 6; 
+        if (hour >= 24) hour = 0; // Północ to 00:00
+        lv_snprintf(dsc->text, dsc->text_length, "%02d:00", hour);
+    }
+}
+
 void create_graph_screen(void)
 {
     graph_screen = lv_obj_create(NULL);
     
     // Tytuł
     lv_obj_t * lbl = lv_label_create(graph_screen);
-    lv_label_set_text(lbl, "WYKRESY POMIARÓW");
+    lv_label_set_text(lbl, "WYKRESY (OSTATNIA DOBA)");
     lv_obj_set_style_text_font(lbl, &montserrat_pl_14, 0);
-    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 5);
 
-    // Tu będzie miejsce na wykresy (na razie puste)
-    
-    // Przycisk POWRÓT
+    // Przycisk POWRÓT na starym miejscu (Na dole)
     lv_obj_t * btn_back = lv_btn_create(graph_screen);
     lv_obj_set_size(btn_back, 80, 30);
-    lv_obj_align(btn_back, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    lv_obj_align(btn_back, LV_ALIGN_BOTTOM_LEFT, 10, -5);
     lv_obj_add_event_cb(btn_back, back_event_to_main, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t * lbl_back = lv_label_create(btn_back);
     lv_label_set_text(lbl_back, "WRÓĆ");
     lv_obj_set_style_text_font(lbl_back, &montserrat_pl_14, 0);
     lv_obj_center(lbl_back);
+
+    // Kontener pionowy na wykresy
+    lv_obj_t * chart_cont = lv_obj_create(graph_screen);
+    lv_obj_set_size(chart_cont, 320, 170); 
+    lv_obj_align(chart_cont, LV_ALIGN_TOP_MID, 0, 30); // Zaczyna się pod tytułem
+    lv_obj_set_flex_flow(chart_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(chart_cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(chart_cont, 5, 0); 
+    lv_obj_set_style_bg_opa(chart_cont, 0, 0);
+    lv_obj_set_style_border_opa(chart_cont, 0, 0);
+    
+    // BARDZO WAŻNE: Blokujemy przewijanie kontenera w poziomie i ucinamy pasek!
+    lv_obj_set_scroll_dir(chart_cont, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(chart_cont, LV_SCROLLBAR_MODE_OFF);
+
+    // --- WYKRES 1: TEMPERATURA ---
+    lv_obj_t * lbl_t = lv_label_create(chart_cont);
+    lv_label_set_text(lbl_t, "Temperatura [°C]");
+    lv_obj_set_style_text_font(lbl_t, &montserrat_pl_14, 0);
+    lv_obj_set_style_pad_top(lbl_t, 30, 0);
+    
+    chart_temp = lv_chart_create(chart_cont);
+    lv_obj_set_size(chart_temp, 240, 140); // Szerokość powiększona do 300!
+    lv_obj_set_style_pad_left(chart_temp, 10, 0);   // POTĘŻNE miejsce na oś Y (65 pikseli)
+    lv_obj_set_style_pad_bottom(chart_temp, 25, 0); // Miejsce na godziny (oś X)
+    lv_obj_set_style_pad_right(chart_temp, 15, 0);  
+    lv_obj_set_style_pad_top(chart_temp, 5, 0);    
+
+    lv_chart_set_type(chart_temp, LV_CHART_TYPE_LINE);
+    lv_obj_set_style_size(chart_temp, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_line_width(chart_temp, 3, LV_PART_ITEMS);
+    lv_obj_set_style_line_rounded(chart_temp, true, LV_PART_ITEMS);
+    lv_chart_set_range(chart_temp, LV_CHART_AXIS_PRIMARY_Y, -20, 50); 
+    // Ustawiamy jasnoszary kolor siatki (żeby zeszła na drugi plan)
+    lv_obj_set_style_line_color(chart_temp, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    
+    // Robimy z siatki linię przerywaną (2 piksele kreski, 2 piksele przerwy)
+    lv_obj_set_style_line_dash_width(chart_temp, 2, LV_PART_MAIN);
+    lv_obj_set_style_line_dash_gap(chart_temp, 2, LV_PART_MAIN);
+    // Oś Y: rysujemy etykiety na szerokości 65 pikseli (ostatni argument)
+    lv_chart_set_axis_tick(chart_temp, LV_CHART_AXIS_PRIMARY_Y, 5, 2, 8, 2, true, 45); 
+    // Oś X: dokładnie 5 kresek głównych!
+    lv_chart_set_axis_tick(chart_temp, LV_CHART_AXIS_PRIMARY_X, 5, 2, 5, 1, true, 20);
+    lv_chart_set_point_count(chart_temp, 96); 
+
+    lv_obj_add_event_cb(chart_temp, chart_x_axis_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    ser_temp = lv_chart_add_series(chart_temp, lv_palette_main(LV_PALETTE_RED), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_all_value(chart_temp, ser_temp, LV_CHART_POINT_NONE);
+
+    // --- WYKRES 2: WILGOTNOŚĆ ---
+    lv_obj_t * lbl_h = lv_label_create(chart_cont);
+    lv_label_set_text(lbl_h, "Wilgotność [%]");
+    lv_obj_set_style_text_font(lbl_h, &montserrat_pl_14, 0);
+    lv_obj_set_style_pad_top(lbl_h, 30, 0);
+    
+    chart_hum = lv_chart_create(chart_cont);
+    lv_obj_set_size(chart_hum, 240, 140);
+    lv_obj_set_style_pad_left(chart_hum, 10, 0);   // Zwiększone na 65
+    lv_obj_set_style_pad_bottom(chart_hum, 25, 0); 
+    lv_obj_set_style_pad_right(chart_hum, 15, 0);  
+    lv_obj_set_style_pad_top(chart_hum, 5, 0);  
+    // Pogrubiamy linię z 1-2 pikseli na 3 piksele (wyraźniejsza krzywa)
+    lv_obj_set_style_line_width(chart_hum, 3, LV_PART_ITEMS);
+    
+    // Zaokrąglamy łączenia między punktami (efekt "płynnej" fali)
+    lv_obj_set_style_line_rounded(chart_hum, true, LV_PART_ITEMS);
+    // Ustawiamy jasnoszary kolor siatki (żeby zeszła na drugi plan)
+    lv_obj_set_style_line_color(chart_hum, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    
+    // Robimy z siatki linię przerywaną (2 piksele kreski, 2 piksele przerwy)
+    lv_obj_set_style_line_dash_width(chart_hum, 2, LV_PART_MAIN);
+    lv_obj_set_style_line_dash_gap(chart_hum, 2, LV_PART_MAIN);
+    
+    lv_chart_set_type(chart_hum, LV_CHART_TYPE_LINE);
+    lv_obj_set_style_size(chart_hum, 0, LV_PART_INDICATOR);
+    lv_chart_set_range(chart_hum, LV_CHART_AXIS_PRIMARY_Y, 0, 100); 
+    // Oś Y szeroka na 65
+    lv_chart_set_axis_tick(chart_hum, LV_CHART_AXIS_PRIMARY_Y, 5, 2, 6, 2, true, 45);
+    // Oś X na dokładnie 5 kresek (było 7!)
+    lv_chart_set_axis_tick(chart_hum, LV_CHART_AXIS_PRIMARY_X, 5, 2, 5, 1, true, 20);
+    lv_chart_set_point_count(chart_hum, 96);
+    
+    lv_obj_add_event_cb(chart_hum, chart_x_axis_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    ser_hum = lv_chart_add_series(chart_hum, lv_palette_main(LV_PALETTE_BLUE), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_all_value(chart_hum, ser_hum, LV_CHART_POINT_NONE);
+
+    // --- WYKRES 3: CIŚNIENIE ---
+    lv_obj_t * lbl_p = lv_label_create(chart_cont);
+    lv_label_set_text(lbl_p, "Ciśnienie [hPa]");
+    lv_obj_set_style_text_font(lbl_p, &montserrat_pl_14, 0);
+    lv_obj_set_style_pad_top(lbl_p, 30, 0);
+    
+    chart_press = lv_chart_create(chart_cont);
+    lv_obj_set_size(chart_press, 240, 140);
+    lv_obj_set_style_pad_left(chart_press, 10, 0);   // Zwiększone na 65
+    lv_obj_set_style_pad_bottom(chart_press, 25, 0); 
+    lv_obj_set_style_pad_right(chart_press, 15, 0);  
+    lv_obj_set_style_pad_top(chart_press, 5, 0);  
+    // Pogrubiamy linię z 1-2 pikseli na 3 piksele (wyraźniejsza krzywa)
+    lv_obj_set_style_line_width(chart_press, 3, LV_PART_ITEMS);
+    
+    // Zaokrąglamy łączenia między punktami (efekt "płynnej" fali)
+    lv_obj_set_style_line_rounded(chart_press, true, LV_PART_ITEMS);
+    // Ustawiamy jasnoszary kolor siatki (żeby zeszła na drugi plan)
+    lv_obj_set_style_line_color(chart_press, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    
+    // Robimy z siatki linię przerywaną (2 piksele kreski, 2 piksele przerwy)
+    lv_obj_set_style_line_dash_width(chart_press, 2, LV_PART_MAIN);
+    lv_obj_set_style_line_dash_gap(chart_press, 2, LV_PART_MAIN);
+    
+    lv_chart_set_type(chart_press, LV_CHART_TYPE_LINE);
+    lv_obj_set_style_size(chart_press, 0, LV_PART_INDICATOR);
+    lv_chart_set_range(chart_press, LV_CHART_AXIS_PRIMARY_Y, 950, 1050); 
+    // Oś Y szeroka na 65
+    lv_chart_set_axis_tick(chart_press, LV_CHART_AXIS_PRIMARY_Y, 5, 2, 5, 2, true, 45);
+    // Oś X na dokładnie 5 kresek (było 7!)
+    lv_chart_set_axis_tick(chart_press, LV_CHART_AXIS_PRIMARY_X, 5, 2, 5, 1, true, 20);
+    lv_chart_set_point_count(chart_press, 96); 
+    
+    lv_obj_add_event_cb(chart_press, chart_x_axis_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    ser_press = lv_chart_add_series(chart_press, lv_palette_main(LV_PALETTE_GREEN), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_set_all_value(chart_press, ser_press, LV_CHART_POINT_NONE);
 }
 
 void graph_event_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     lv_scr_load(graph_screen);
-    lvgl_port_unlock();
 }
 
 void create_graph_button(lv_obj_t * scr)
@@ -1219,14 +1460,66 @@ void create_weather_info_screen(void)
     weather_info_screen = lv_obj_create(NULL);
     
     // Tytuł
-    lv_obj_t * lbl = lv_label_create(weather_info_screen);
-    lv_label_set_text(lbl, "PROGNOZA POGODY");
-    lv_obj_set_style_text_font(lbl, &montserrat_pl_14, 0);
-    lv_obj_align(lbl, LV_ALIGN_TOP_MID, 0, 10);
+    lbl_weather_city = lv_label_create(weather_info_screen);
+    lv_label_set_text_fmt(lbl_weather_city, "PROGNOZA POGODY DLA: %s", current_city); // Wkleja zmienną current_city
+    lv_obj_set_style_text_font(lbl_weather_city, &montserrat_pl_14, 0);
+    lv_obj_align(lbl_weather_city, LV_ALIGN_TOP_MID, 0, 10);
 
-    // Tu będzie miejsce na szczegółową prognozę (na razie puste)
+    // --- KONTENER KARUZELI ---
+    lv_obj_t * scroll_cont = lv_obj_create(weather_info_screen);
+    lv_obj_set_size(scroll_cont, 320, 160); // Zajmuje środek ekranu
+    lv_obj_align(scroll_cont, LV_ALIGN_TOP_MID, 0, 35);
     
-    // Przycisk POWRÓT
+    // Ustawiamy jako poziomy rządek (Flex Row)
+    lv_obj_set_flex_flow(scroll_cont, LV_FLEX_FLOW_ROW);
+    // Włączamy "przyciąganie" (Snap) przewijania, żeby karty fajnie wskakiwały na środek
+    lv_obj_set_scrollbar_mode(scroll_cont, LV_SCROLLBAR_MODE_OFF); // Ukrywamy brzydki pasek przewijania
+    lv_obj_set_scroll_dir(scroll_cont, LV_DIR_HOR); // Ustawiamy przewijanie tylko w poziomie
+    lv_obj_add_flag(scroll_cont, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+    
+    lv_obj_set_style_bg_opa(scroll_cont, 0, 0);
+    lv_obj_set_style_border_opa(scroll_cont, 0, 0);
+    lv_obj_set_style_pad_all(scroll_cont, 10, 0);
+    lv_obj_set_style_pad_column(scroll_cont, 15, 0); // Przerwy między kartami
+
+    const char * dummy_days[7] = {"DZIŚ", "JUTRO", "ŚRO", "CZW", "PIĄ", "SOB", "NIE"};
+
+    // Tworzymy 7 pionowych kart w pętli
+    for(int i = 0; i < 7; i++) {
+        lv_obj_t * card = lv_obj_create(scroll_cont);
+        lv_obj_set_size(card, 100, 140); // Wąska i wysoka karta
+        lv_obj_set_style_radius(card, 20, 0);
+        lv_obj_set_style_bg_color(card, lv_palette_main(LV_PALETTE_GREY), 0);
+        lv_obj_set_style_bg_opa(card, LV_OPA_10, 0);
+        lv_obj_set_style_border_width(card, 1, 0);
+        lv_obj_set_style_border_color(card, lv_palette_main(LV_PALETTE_GREY), 0);
+        
+        lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(card, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        
+        // Zabezpieczenie dotyku
+        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(card, LV_OBJ_FLAG_SNAPPABLE); // Mówi kontenerowi "Przyciągaj do mnie!"
+
+        // 1. Nazwa dnia
+        forecast_day_labels[i] = lv_label_create(card);
+        lv_label_set_text(forecast_day_labels[i], dummy_days[i]);
+        lv_obj_set_style_text_font(forecast_day_labels[i], &montserrat_pl_14, 0);
+
+        // 2. Ikona Pogody
+        forecast_icon_labels[i] = lv_label_create(card);
+        lv_label_set_text(forecast_icon_labels[i], SYM_W_SUN); // Tymczasowe słoneczko
+        lv_obj_set_style_text_font(forecast_icon_labels[i], &weather_icons, 0); // Większa czcionka dla ikony
+
+        // 3. Temperatury (Max i Min)
+        forecast_temp_labels[i] = lv_label_create(card);
+        // Tymczasowe, malejące temperatury dla bajeru wizualnego
+        lv_label_set_text_fmt(forecast_temp_labels[i], "2%d°C\n 1%d°C", 5-i, 2+i); 
+        lv_obj_set_style_text_align(forecast_temp_labels[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(forecast_temp_labels[i], &montserrat_pl_14, 0);
+    }
+    
+    // --- PRZYCISK POWRÓT ---
     lv_obj_t * btn_back = lv_btn_create(weather_info_screen);
     lv_obj_set_size(btn_back, 80, 30);
     lv_obj_align(btn_back, LV_ALIGN_BOTTOM_LEFT, 10, -10);
@@ -1239,9 +1532,7 @@ void create_weather_info_screen(void)
 }
 
 void weather_info_event_cb(lv_event_t * e) {
-    lvgl_port_lock(-1);
     lv_scr_load(weather_info_screen);
-    lvgl_port_unlock();
 }
 
 void create_weather_info_button(lv_obj_t * scr)
@@ -1279,10 +1570,14 @@ void create_weather_info_button(lv_obj_t * scr)
 
 // --- TWORZENIE GŁÓWNEGO INTERFEJSU LVGL ---
 void create_weather_ui(void) {
-    lvgl_port_lock(-1); 
 
     main_screen = lv_scr_act();
     lv_obj_t * scr = lv_scr_act();
+
+    // --- LOGO POLITECHNIKI ---
+    lv_obj_t * logo = lv_img_create(scr);
+    lv_img_set_src(logo, &put_logo);
+    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 2);
 
     // 1. Kontener na kafelki (Flexbox) - rządek
     lv_obj_t * cont = lv_obj_create(scr);
@@ -1366,7 +1661,6 @@ void create_weather_ui(void) {
     create_menu_button(scr); // Stworzenie przycisku menu (koło zębate)
     create_graph_button(scr); // Stworzenie przycisku wykresu
     create_weather_info_button(scr); // Stworzenie przycisku prognozy pogody
-    lvgl_port_unlock();
 }
 
 // --- TASKI ODBIERAJĄCE DANE ---
@@ -1417,83 +1711,304 @@ void collect_time_task(void *pvParameters) {
 }
 
 
+uint8_t get_battery_level(uint16_t v) {
+    // Odcięcie i 100%
+    if (v >= 3000) return 100;
+    if (v <= 2000) return 0;
+
+    // 1. Faza początkowa: Szybki spadek napięcia po wyjęciu z blistra
+    // Od 3.0V do 2.8V (3000 - 2800mV) ucieka pierwsze 15% pojemności
+    if (v > 2800) {
+        return 85 + 15 * (v - 2800) / 200; 
+    }
+    // 2. Faza robocza (Płaskowyż): Baterie długo trzymają to napięcie
+    // Od 2.8V do 2.4V (2800 - 2400mV) oddają większość energii (ok. 55% pojemności)
+    else if (v > 2400) {
+        return 30 + 55 * (v - 2400) / 400;
+    }
+    // 3. Faza końcowa: Wyraźny spadek
+    // Od 2.4V do 2.2V (2400 - 2200mV) to przedostatnie 20% życia
+    else if (v > 2200) {
+        return 10 + 20 * (v - 2200) / 200;
+    }
+    // 4. Faza "Agonii": Napięcie leci w dół
+    // Od 2.2V do 2.0V (2200 - 2000mV) zostaje ostatnie 10% na "dokończenie spraw"
+    else {
+        return 10 * (v - 2000) / 200;
+    }
+}
+
+// --- MAPOWANIE KODÓW POGODY (WMO) NA TWOJE IKONY ---
+const char* get_weather_icon(int code) {
+    if (code == 0 || code == 1) return SYM_W_SUN; // Czyste niebo
+    if (code == 2) return SYM_W_CLOUD_SUN; // Częściowe zachmurzenie
+    if (code == 3 || code == 45 || code == 48) return SYM_W_CLOUD; // Pochmurno / Mgła
+    if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return SYM_W_RAIN; // Różne rodzaje deszczu
+    if ((code >= 71 && code <= 77) || code == 85 || code == 86) return SYM_W_SNOW; // Śnieg
+    if (code >= 95) return SYM_W_STORM; // Burze
+    return SYM_W_SUN; // Domyślnie słońce w razie błędu
+}
+
+
+// Pomocnicza funkcja do zamiany spacji na znaki w linku (np. "Nowy Jork" -> "Nowy%20Jork")
+void encode_url_spaces(const char *src, char *dest) {
+    while (*src) {
+        if (*src == ' ') { *dest++ = '%'; *dest++ = '2'; *dest++ = '0'; }
+        else { *dest++ = *src; }
+        src++;
+    }
+    *dest = '\0';
+}
+
+void fetch_weather_task(void *pvParameters) {
+    const char* pl_days[] = {"NIE", "PON", "WTO", "ŚRO", "CZW", "PIĄ", "SOB"};
+
+    while(1) {
+        time_t now; struct tm timeinfo;
+        time(&now); localtime_r(&now, &timeinfo);
+        bool is_time_synced = (timeinfo.tm_year > (2020 - 1900));
+
+        wifi_ap_record_t ap_info;
+        bool is_wifi_connected = (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK);
+
+        if (is_wifi_connected && is_time_synced && force_weather_update) {
+            ESP_LOGI(TAG, "Szukanie koordynatow dla miasta: %s", current_city);
+            force_weather_update = false; // Reset flagi
+            
+            char encoded_city[128];
+            encode_url_spaces(current_city, encoded_city);
+
+            // 1. ZAPYTANIE DO GEOKODOWANIA (Szukanie miasta)
+            char geo_url[256];
+            snprintf(geo_url, sizeof(geo_url), "http://geocoding-api.open-meteo.com/v1/search?name=%s&count=1&language=pl&format=json", encoded_city);
+
+            esp_http_client_config_t config = { .url = geo_url, .method = HTTP_METHOD_GET, .timeout_ms = 5000 };
+            esp_http_client_handle_t client = esp_http_client_init(&config);
+            esp_err_t err = esp_http_client_open(client, 0);
+
+            float lat = 200.0, lon = 200.0; // Wartości domyślne (błędne)
+
+            if (err == ESP_OK) {
+                esp_http_client_fetch_headers(client);
+                char *buffer = malloc(2048);
+                if (buffer) {
+                    int total_read = 0;
+                    while (total_read < 2047) {
+                        int read_len = esp_http_client_read(client, buffer + total_read, 2047 - total_read);
+                        if (read_len <= 0) break;
+                        total_read += read_len;
+                        vTaskDelay(pdMS_TO_TICKS(1));
+                    }
+                    buffer[total_read] = 0;
+                    
+                    cJSON *root = cJSON_Parse(buffer);
+                    if (root) {
+                        cJSON *results = cJSON_GetObjectItem(root, "results");
+                        if (cJSON_IsArray(results) && cJSON_GetArraySize(results) > 0) {
+                            cJSON *first_result = cJSON_GetArrayItem(results, 0);
+                            lat = cJSON_GetObjectItem(first_result, "latitude")->valuedouble;
+                            lon = cJSON_GetObjectItem(first_result, "longitude")->valuedouble;
+                            ESP_LOGI(TAG, "Znaleziono: Lat: %.2f, Lon: %.2f", lat, lon);
+                        }
+                        cJSON_Delete(root);
+                    }
+                    free(buffer);
+                }
+            }
+            esp_http_client_cleanup(client);
+
+            // 2. JEŚLI ZNALEZIONO MIASTO -> POBIERZ POGODĘ
+            if (lat != 200.0) {
+                char weather_url[256];
+                snprintf(weather_url, sizeof(weather_url), "http://api.open-meteo.com/v1/forecast?latitude=%.2f&longitude=%.2f&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%%2FWarsaw", lat, lon);
+                
+                esp_http_client_config_t w_config = { .url = weather_url, .method = HTTP_METHOD_GET, .timeout_ms = 5000 };
+                esp_http_client_handle_t w_client = esp_http_client_init(&w_config);
+                err = esp_http_client_open(w_client, 0);
+
+                if (err == ESP_OK) {
+                    esp_http_client_fetch_headers(w_client);
+                    char *w_buffer = malloc(2048);
+                    if (w_buffer) {
+                        int total_read = 0;
+                        while (total_read < 2047) {
+                            int read_len = esp_http_client_read(w_client, w_buffer + total_read, 2047 - total_read);
+                            if (read_len <= 0) break;
+                            total_read += read_len;
+                        }
+                        w_buffer[total_read] = 0;
+
+                        cJSON *root = cJSON_Parse(w_buffer);
+                        if (root) {
+                            cJSON *daily = cJSON_GetObjectItem(root, "daily");
+                            if (daily) {
+                                cJSON *w_codes = cJSON_GetObjectItem(daily, "weather_code");
+                                cJSON *t_max = cJSON_GetObjectItem(daily, "temperature_2m_max");
+                                cJSON *t_min = cJSON_GetObjectItem(daily, "temperature_2m_min");
+
+                                if (w_codes && t_max && t_min) {
+                                    int today_wday = timeinfo.tm_wday; 
+                                    lvgl_port_lock(-1);
+                                    for(int i = 0; i < 7; i++) {
+                                        cJSON *code_item = cJSON_GetArrayItem(w_codes, i);
+                                        cJSON *max_item = cJSON_GetArrayItem(t_max, i);
+                                        cJSON *min_item = cJSON_GetArrayItem(t_min, i);
+
+                                        if (code_item && max_item && min_item) {
+                                            lv_label_set_text(forecast_icon_labels[i], get_weather_icon(code_item->valueint));
+                                            lv_label_set_text_fmt(forecast_temp_labels[i], "%d°C\n%d°C", (int)max_item->valuedouble, (int)min_item->valuedouble);
+                                            
+                                            if (i == 0) lv_label_set_text(forecast_day_labels[i], "DZIŚ");
+                                            else if (i == 1) lv_label_set_text(forecast_day_labels[i], "JUTRO");
+                                            else lv_label_set_text(forecast_day_labels[i], pl_days[(today_wday + i) % 7]);
+                                        }
+                                    }
+                                    lvgl_port_unlock();
+                                }
+                            }
+                            cJSON_Delete(root);
+                        }
+                        free(w_buffer);
+                    }
+                }
+                esp_http_client_cleanup(w_client);
+            } else {
+                ESP_LOGE(TAG, "Nie znaleziono podanego miasta!");
+            }
+        }
+
+        // 3. Sprytny "Sen" - śpimy w 2-sekundowych interwałach. 
+        // Dzięki temu, jak wpiszesz nowe miasto, system wybudzi się max po 2 sekundach i pobierze dane!
+        for(int s = 0; s < 7200; s += 2) { 
+            if (force_weather_update) break; // Ktoś zmienił miasto, przerywamy sen!
+            vTaskDelay(pdMS_TO_TICKS(2000));
+        }
+    }
+}
+
 // --- TASK AKTUALIZUJĄCY EKRAN (GUI) ---
 void update_ui_task(void *pvParameters) {
     SensorData receivedData = {0};
     char buf[64];
     time_t now; 
     struct tm timeinfo;
-    int start_delay_counter = 5; // Pominięcie pierwszych 5 cykli (ok. 2.5s)
-
+    int start_delay_counter = 5; 
+    int chart_update_counter = 590; 
+    int last_day = -1; 
+    bool first_chart_point = true; // <--- NOWA FLAGA DLA TRIKU WIZUALNEGO!
+    
     while(1) {
-        lvgl_port_lock(-1); // POPRAWKA 2
-
-        // Aktualizacja Danych z NRF
-        if (xQueueReceive(xSensorQueue, &receivedData, 0) == pdTRUE) {
-            sprintf(buf, "%.2f °C", receivedData.temp_hundredths / 100.0f);
-            lv_label_set_text(lbl_temp, buf); 
-            
-            sprintf(buf, "%.2f %%", receivedData.hum_x1024 / 1024.0f);
-            lv_label_set_text(lbl_hum, buf);
-            
-            sprintf(buf, "%.0f hPa", receivedData.pressure_pa / 100.0f);
-            lv_label_set_text(lbl_press, buf);
-        }
-
-        // Aktualizacja Czasu
+        // 1. Pobieranie danych z kolejki (poza lockiem)
+        xQueueReceive(xSensorQueue, &receivedData, 0);
+        uint8_t battery_level = get_battery_level(receivedData.battery_mv);
+        
         time(&now);
         localtime_r(&now, &timeinfo);
+        
+        wifi_ap_record_t ap_info;
+        esp_err_t res = esp_wifi_sta_get_ap_info(&ap_info);
+
+        // --- 2. GŁÓWNA SEKCJA RYSOWANIA (LOCK) ---
+        lvgl_port_lock(-1); 
+
+        // Aktualizacja kafelków tekstowych
+        sprintf(buf, "%.2f °C", receivedData.temp_hundredths / 100.0f);
+        lv_label_set_text(lbl_temp, buf); 
+        sprintf(buf, "%.2f %%", receivedData.hum_x1024 / 1024.0f);
+        lv_label_set_text(lbl_hum, buf);
+        sprintf(buf, "%.0f hPa", receivedData.pressure_pa / 100.0f);
+        lv_label_set_text(lbl_press, buf);
+
+        // Zarządzanie nowym dniem na wykresach
         if (timeinfo.tm_year > (2020 - 1900)) {
-            // Sam czas do prawego rogu
+            if (last_day == -1) last_day = timeinfo.tm_mday;
+            if (last_day != timeinfo.tm_mday) {
+                // Wybiła północ (zmienił się dzień)! Czyścimy wykresy:
+                lv_chart_set_all_value(chart_temp, ser_temp, LV_CHART_POINT_NONE);
+                lv_chart_set_all_value(chart_hum, ser_hum, LV_CHART_POINT_NONE);
+                lv_chart_set_all_value(chart_press, ser_press, LV_CHART_POINT_NONE);
+                
+                last_day = timeinfo.tm_mday;
+                first_chart_point = true; // Znowu potrzebujemy "podwójnej" kropki na starcie dnia
+            }
+        }
+ // --- SEKCJA WYKRESÓW (Odchudzona: 15-minutowa!) ---
+        chart_update_counter++;
+        
+        // 1800 * 500ms = 900 sekund = 15 minut
+        if (chart_update_counter >= 1800) {  
+            
+            if (ser_temp != NULL && receivedData.pressure_pa > 0 && timeinfo.tm_year > (2020 - 1900)) {
+                chart_update_counter = 0; 
+                
+                int32_t t = receivedData.temp_hundredths / 100;
+                int32_t h = receivedData.hum_x1024 / 1024;
+                int32_t p = receivedData.pressure_pa / 100;
+
+                // TARCZA OCHRONNA (Clamping)
+                if (t > 80) t = 80; else if (t < -40) t = -40;
+                if (h > 100) h = 100; else if (h < 0) h = 0;
+                if (p > 1200) p = 1200; else if (p < 800) p = 800;
+
+                // OBLICZENIE POZYCJI X DLA 96 PUNKTÓW
+                uint16_t point_index = (timeinfo.tm_hour * 4) + (timeinfo.tm_min / 15);
+
+                if (point_index < 96) {
+                    lv_chart_set_value_by_id(chart_temp, ser_temp, point_index, t);
+                    lv_chart_set_value_by_id(chart_hum, ser_hum, point_index, h);
+                    lv_chart_set_value_by_id(chart_press, ser_press, point_index, p);
+                    
+                    // --- TRIK WIZUALNY ---
+                    if (first_chart_point && point_index > 0) {
+                        lv_chart_set_value_by_id(chart_temp, ser_temp, point_index - 1, t);
+                        lv_chart_set_value_by_id(chart_hum, ser_hum, point_index - 1, h);
+                        lv_chart_set_value_by_id(chart_press, ser_press, point_index - 1, p);
+                        first_chart_point = false; 
+                    }
+                }
+            } else if (receivedData.pressure_pa == 0) {
+                // Czujnik jeszcze nic nie wysłał? Spróbuj za sekundę.
+                chart_update_counter = 1798; 
+            }
+        }
+        
+
+        // Aktualizacja baterii
+        if (battery_level > 75) {
+            lv_label_set_text(icon_battery, MY_SYM_BAT_100);
+            lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_GREEN), 0);
+        } else if (battery_level > 25) {
+            lv_label_set_text(icon_battery, MY_SYM_BAT_50);
+            lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_YELLOW), 0);
+        } else {
+            lv_label_set_text(icon_battery, MY_SYM_BAT_0);
+            lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+
+        // Aktualizacja zegara
+        if (timeinfo.tm_year > (2020 - 1900)) {
             sprintf(buf, "%02d.%02d.%04d", timeinfo.tm_mday, timeinfo.tm_mon + 1, timeinfo.tm_year + 1900);
             lv_label_set_text(lbl_date, buf);
             sprintf(buf, "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
             lv_label_set_text(lbl_time, buf);
         }
 
-        lvgl_port_unlock();
-        vTaskDelay(pdMS_TO_TICKS(500)); // Odświeżaj 2 razy na sekundę
-
-        //aktualizacja ikony wifi
-
+        // --- BEZPIECZNA AKTUALIZACJA IKONY WIFI (Wewnątrz LOCK) ---
         if (start_delay_counter > 0) {
             start_delay_counter--;
-            // W tym czasie ikona będzie szara (taka, jak w create_status_bar)
         } else {
-            wifi_ap_record_t ap_info;
-            esp_err_t res = esp_wifi_sta_get_ap_info(&ap_info);
-
-            lvgl_port_lock(-1);
             if (is_wifi_connecting) {
-                update_wifi_icon(0, false); // Blink
-            } 
-            else if (res == ESP_OK) {
-                update_wifi_icon(ap_info.rssi, true);
-            } 
-            else {
-                update_wifi_icon(0, false); // Krzyżyk (tylko jeśli połączenie się poddało)
-            }
-            lvgl_port_unlock();
-            vTaskDelay(pdMS_TO_TICKS(500)); // Aktualizuj ikonę WiFi co sekundę
-        }
-            // Aktualizacja ikony baterii (przykładowa logika, dostosuj do swojego systemu pomiaru baterii)
-            /*uint8_t battery_level = get_battery_level(); // Funkcja do odczytu poziomu baterii (0-100)
-            lvgl_port_lock(-1);
-            if (battery_level > 75) {
-                lv_label_set_text(icon_battery, MY_SYM_BAT_100);
-                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_GREEN), 0);
-            } else if (battery_level > 25) {
-                lv_label_set_text(icon_battery, MY_SYM_BAT_50);
-                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_YELLOW), 0);
+                update_wifi_icon(0, false); 
             } else {
-                lv_label_set_text(icon_battery, MY_SYM_BAT_0);
-                lv_obj_set_style_text_color(icon_battery, lv_palette_main(LV_PALETTE_RED), 0);
+                update_wifi_icon(ap_info.rssi, (res == ESP_OK));
             }
-            lvgl_port_unlock();
-            vTaskDelay(pdMS_TO_TICKS(60000)); // Aktualizuj ikonę baterii co minutę
-            */  
+        }
+
+        lvgl_port_unlock(); 
+        // --- KONIEC LOCKA ---
+
+        vTaskDelay(pdMS_TO_TICKS(500)); 
     }
-    
 }
 
 // --- TASK TRYBU NOCNEGO ---
@@ -1557,6 +2072,8 @@ void app_main(void) {
 
     load_brightness_settings();
 
+    load_location_settings();
+
     // 1. Inicjalizacja sprzętu
     xSpiMutex = xSemaphoreCreateMutex();
     xSensorQueue = xQueueCreate(1, sizeof(SensorData));
@@ -1569,14 +2086,12 @@ void app_main(void) {
     lcd_touch_init(VSPI_HOST);
 
     // 2. Rysowanie początkowego interfejsu
+    lvgl_port_lock(-1);
     init_button_styles(); // Inicjalizacja stylów przycisków
     create_weather_ui();
-    lvgl_port_lock(-1);
     create_settings_ui();
     create_graph_screen();
     create_weather_info_screen();
-    create_wifi_settings_ui();
-    create_date_time_ui();
     lv_scr_load(main_screen); // Ustawienie ekranu głównego jako aktywnego
     lvgl_port_unlock();
     
@@ -1585,6 +2100,7 @@ void app_main(void) {
     xTaskCreate(collect_time_task, "TIME_TASK", 8192, NULL, 4, NULL); 
     xTaskCreate(update_ui_task, "GUI_UPDATE_TASK", 8192, NULL, 5, NULL);
     xTaskCreate(night_mode_task, "NIGHT_MODE_TASK", 4096, NULL, 5, NULL);
+    xTaskCreate(fetch_weather_task, "FETCH_WEATHER", 8192, NULL, 4, NULL);
 
     ESP_LOGI(TAG, "System dziala!");
     

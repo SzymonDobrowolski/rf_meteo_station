@@ -18,11 +18,12 @@
 #define Channel 76
 #define NRF_SPEED 0x07 //2Mbps, 0dBm
 
-// --- STRUKTURA DANYCH (12 bajtów) ---
+// --- STRUKTURA DANYCH (14 bajtów) ---
 typedef struct __attribute__((packed)) {
     int32_t temp_hundredths;
     uint32_t pressure_pa;
     uint32_t hum_x1024;
+    uint16_t battery_mv;
 } SensorData;
 
 // LCD Pins
