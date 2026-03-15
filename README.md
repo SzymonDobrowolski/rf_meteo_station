@@ -18,11 +18,11 @@ The hardware architecture is divided into two separate custom-designed printed c
 
 | Main Board | External Sensor Board |
 |:---:|:---:|
-| <img src="images/main_pcb.jpg" width="400" alt="Main Board PCB"> | <img src="images/sensor_pcb.jpg" width="400" alt="Sensor Board PCB"> |
+| <img src="images/Internal_isometric.png" width="400" alt="Main Board PCB"> | <img src="images/external_isometric.png" width="400" alt="Sensor Board PCB"> |
 
 **📄 Full Schematics (PDF):**
-* [Open Main Board Schematic PDF](images/main_schematic.pdf)
-* [Open Sensor Board Schematic PDF](images/sensor_schematic.pdf)
+* [Open Main Board Schematic PDF](images/int_scheme.pdf)
+* [Open Sensor Board Schematic PDF](images/ext_scheme.pdf)
 
 ---
 
@@ -81,7 +81,7 @@ idf.py -p (YOUR_PORT) flash monitor
 Here is the fully assembled, programmed, and working RF Meteo Station in action!
 
 <p align="center">
-  <img src="images/final_result_1.jpg" width="45%" alt="Working Station 1">
+  <img src="images/all_project.jpg" width="45%" alt="Working Station 1">
   &nbsp;
-  <img src="images/final_result_2.jpg" width="45%" alt="Working Station 2">
+  <img src="images/all_project2.jpg" width="45%" alt="Working Station 2">
 </p>
