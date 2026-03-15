@@ -5497,7 +5497,7 @@
 			(embedded_fonts no)
 		)
 	)
-	(text "Wyświetlacz LCD do pomiarów + wykres"
+	(text "LCD display"
 		(exclude_from_sim no)
 		(at 169.672 157.226 90)
 		(effects
@@ -5507,7 +5507,7 @@
 		)
 		(uuid "09c287ff-15e2-4dae-8ed6-483261c27c70")
 	)
-	(text "Komunikacja z modułem zewnętrznym"
+	(text "Communication with external sensor"
 		(exclude_from_sim no)
 		(at 156.21 15.494 0)
 		(effects
@@ -5517,19 +5517,9 @@
 		)
 		(uuid "1dc83689-f144-4ebf-b4e4-01a9c13775fe")
 	)
-	(text "Zmienić na 100 ohm jeśli nie zadziała"
+	(text "Alternative microUSB supply"
 		(exclude_from_sim no)
-		(at 102.362 39.624 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "23608887-ba25-4876-bd20-ee0938f4e30f")
-	)
-	(text "Zasialnie microusb"
-		(exclude_from_sim no)
-		(at 23.114 68.072 0)
+		(at 23.876 68.326 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5537,19 +5527,9 @@
 		)
 		(uuid "37a065b6-fb84-494e-ae20-281a162d1166")
 	)
-	(text "Wybór trybu pracy "
+	(text "ESP enable diode"
 		(exclude_from_sim no)
-		(at 270.256 92.71 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "6c385b0d-ade5-4b8f-b868-5da7c0a064a0")
-	)
-	(text "Dioda do enable ESP"
-		(exclude_from_sim no)
-		(at 278.13 138.938 0)
+		(at 276.606 140.462 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5557,19 +5537,19 @@
 		)
 		(uuid "721ac868-2cce-47b7-acfb-66afd97921cc")
 	)
-	(text "Automatyczny reset z możliwością przycisku"
+	(text "Additional connector for external programmer"
 		(exclude_from_sim no)
-		(at 258.826 13.97 0)
+		(at 26.924 143.256 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 		)
-		(uuid "776c50ed-d2a9-40a0-b917-1f482d501b80")
+		(uuid "78b76ac1-086b-47ad-8017-ab07acf4dcb3")
 	)
-	(text "Dioda do boot ESP"
+	(text "ESP boot diode"
 		(exclude_from_sim no)
-		(at 256.286 138.938 0)
+		(at 256.286 140.208 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5577,17 +5557,7 @@
 		)
 		(uuid "853363d2-27f4-456e-9b25-69006e09c117")
 	)
-	(text "RST aktywowany stanem niskim (pull up)"
-		(exclude_from_sim no)
-		(at 94.234 168.148 0)
-		(effects
-			(font
-				(size 0.254 0.254)
-			)
-		)
-		(uuid "92c68126-f234-4ac2-9e81-eb9ed43934bb")
-	)
-	(text "Alternatywa USB_C"
+	(text "USB-C 5V power supply\n"
 		(exclude_from_sim no)
 		(at 112.776 61.214 0)
 		(effects
@@ -5597,7 +5567,7 @@
 		)
 		(uuid "994d48bd-0582-4512-9ff8-e39a0f5c184d")
 	)
-	(text "Dioda do ERROR FLAGE przetwornika 3,3 V"
+	(text "ERROR FLAGE diode (3.3 V power supply)"
 		(exclude_from_sim no)
 		(at 282.702 109.982 0)
 		(effects
@@ -5607,9 +5577,9 @@
 		)
 		(uuid "a54a6171-4769-461b-9b05-f8a8e1aaa36a")
 	)
-	(text "Komunikacja USB z ESP32\n"
+	(text "USB -> ESP32 communication\n"
 		(exclude_from_sim no)
-		(at 208.788 29.718 0)
+		(at 210.82 29.972 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5617,27 +5587,7 @@
 		)
 		(uuid "bb1e2a27-eab5-455b-b206-926b9fdb99fc")
 	)
-	(text "Zmiana trybu pracy wyświetlacza (wykres lub pomiary)"
-		(exclude_from_sim no)
-		(at 96.52 14.224 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "be6aece2-d283-4e9e-9571-231ae86a62c0")
-	)
-	(text "Przycisk do zmiany jasności ekranu (PWM)"
-		(exclude_from_sim no)
-		(at 38.1 14.478 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "c3f93350-05fe-4e4a-90f0-c1a8695e3ea6")
-	)
-	(text "\"Serce układu\""
+	(text "MCU\n"
 		(exclude_from_sim no)
 		(at 67.564 152.146 0)
 		(effects
@@ -5647,25 +5597,15 @@
 		)
 		(uuid "d0d3c33f-3f3c-4ef1-a5d0-c652f65c5ac4")
 	)
-	(text "Przetwornica 3.3 V"
+	(text "Power supply 3.3 V"
 		(exclude_from_sim no)
-		(at 214.884 134.366 0)
+		(at 214.63 132.842 0)
 		(effects
 			(font
 				(size 1.27 1.27)
 			)
 		)
 		(uuid "d84fb3e8-7c12-4bc6-8241-359b72431ca8")
-	)
-	(text "Zmienić na 100 ohm jeśli nie zadziała"
-		(exclude_from_sim no)
-		(at 45.212 39.624 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-		)
-		(uuid "f44fd0ca-9a7b-4733-ab10-53ef66e20c61")
 	)
 	(junction
 		(at 222.25 68.58)
