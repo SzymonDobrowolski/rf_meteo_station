@@ -35,7 +35,7 @@ void lcd_init(void) {
     // 3. Konfiguracja sprzętowa sterownika ILI9341
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
-        .reset_gpio_num = Twoj_Pin_RST, 
+        .reset_gpio_num = RESET_PIN, 
         .rgb_endian = LCD_RGB_ENDIAN_BGR, 
         .bits_per_pixel = 16,
     };
@@ -58,7 +58,7 @@ void lcd_init(void) {
     
     // Jeśli obraz będzie wyświetlał się "do góry nogami", 
     // zamień poniżej parametry na: (panel_handle, false, true)
-    esp_lcd_panel_mirror(panel_handle, false, true); 
+    esp_lcd_panel_mirror(panel_handle, true, true); 
     
     // Włączamy ekran
     esp_lcd_panel_disp_on_off(panel_handle, true);

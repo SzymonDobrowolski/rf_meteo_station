@@ -30,34 +30,37 @@ static uint16_t xpt2046_spi_read(uint8_t command) {
 
 static void touchpad_read(lv_indev_drv_t * drv, lv_indev_data_t * data) {
     if (gpio_get_level(T_IRQ) == 0) {
-        // ZAMIANA MIEJSCAMI: CMD_Y_READ dla X, CMD_X_READ dla Y
+        
+        // Ponieważ już zamieniłeś komendy odczytu (X z Y), zakładam że:
+        // x_raw reaguje na ruch Lewo-Prawo
+        // y_raw reaguje na ruch Góra-Dół
         uint16_t x_raw = xpt2046_spi_read(CMD_Y_READ); 
         uint16_t y_raw = xpt2046_spi_read(CMD_X_READ);
 
-        // Twoje zaobserwowane zakresy:
-        // X_raw w rogach: ok. 150 (prawy) do 1880 (lewy)
-        // Y_raw w rogach: ok. 150 (dół) do 1900 (góra)
-        int32_t min_raw = 150;
-        int32_t max_raw = 1900;
+        // Wyliczone limity z Twoich pomiarów
+        int32_t x_min = 200;
+        int32_t x_max = 1930;
+        int32_t y_min = 164;
+        int32_t y_max = 1910;
 
-        // Mapowanie:
-        // Dla X: 1880 -> 0 (lewo), 150 -> 320 (prawo)
-        int32_t x = (max_raw - x_raw) * LCD_WIDTH / (max_raw - min_raw);
-        
-        // Dla Y: 1900 -> 0 (góra), 150 -> 240 (dół)
-        int32_t y = (max_raw - y_raw) * LCD_HEIGHT / (max_raw - min_raw);
+        // Przeskalowanie surowych danych na rozdzielczość ekranu (0-320 i 0-240)
+        int32_t x = (x_raw - x_min) * LCD_WIDTH / (x_max - x_min);
+        int32_t y = (y_raw - y_min) * LCD_HEIGHT / (y_max - y_min);
+
+        // --- ZABEZPIECZENIE (Clamping) ---
+        // Przywracamy je! Jeśli naciśniesz mocniej w samym rogu, x_raw może wynieść np. 190.
+        // Wtedy 'x' wyszłoby ujemne, a LVGL by zwariował. To ucina wartości do krawędzi.
+        if(x < 0) x = 0;
+        if(x >= LCD_WIDTH) x = LCD_WIDTH - 1;
+        if(y < 0) y = 0;
+        if(y >= LCD_HEIGHT) y = LCD_HEIGHT - 1;
 
         data->point.x = x;
         data->point.y = y;
-
-        // Ograniczenia
-        if(data->point.x < 0) data->point.x = 0;
-        if(data->point.x >= LCD_WIDTH) data->point.x = LCD_WIDTH - 1;
-        if(data->point.y < 0) data->point.y = 0;
-        if(data->point.y >= LCD_HEIGHT) data->point.y = LCD_HEIGHT - 1;
-
         data->state = LV_INDEV_STATE_PR;
-        ESP_LOGI(TAG, "CALIBRATED: X=%d, Y=%d", data->point.x, data->point.y);
+
+        // Możesz to odkomentować do testów, żeby sprawdzić precyzję
+         ESP_LOGI(TAG, "MAPPED: X=%d, Y=%d", data->point.x, data->point.y);
     } else {
         data->state = LV_INDEV_STATE_REL;
     }
