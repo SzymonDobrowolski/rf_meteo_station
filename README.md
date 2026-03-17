@@ -34,7 +34,7 @@ To make the project a fully finished product, custom enclosures were modeled fro
 
 | Display Enclosure | Sensor Enclosure |
 |:---:|:---:|
-| <img src="images/main_case.jpg" width="400" alt="Main Case 3D Model"> | <img src="images/sensor_case.jpg" width="400" alt="Sensor Case 3D Model"> |
+| <img src="images/int_case.png" width="400" alt="Main Case 3D Model"> | <img src="images/ext_case.png" width="400" alt="Sensor Case 3D Model"> |
 
 ---
 
